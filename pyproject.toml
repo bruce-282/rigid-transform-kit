@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rigid-transform-kit"
+version = "0.1.0"
+description = "Frame-aware rigid transforms for industrial vision-robot pipelines"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.21",
+    "scipy>=1.7",
+]
+
+[project.optional-dependencies]
+viz = [
+    "rerun-sdk>=0.20",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["rigid_transform_kit*"]
