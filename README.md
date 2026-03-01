@@ -19,65 +19,103 @@ T_base2cam @ T_cam2tcp     # → OK: T(BASE→TCP)
 ## Install
 
 ```bash
+# base (numpy + scipy만)
 pip install -e .
+
+# with Rerun 3D visualization
+pip install -e ".[viz]"
+
+# with dev/test tools
+pip install -e ".[dev]"
 ```
 
-## Architecture
+### Build Scripts
 
+```bash
+# Linux (pip)
+./scripts/build/build_linux_pip.sh          # base
+./scripts/build/build_linux_pip.sh viz      # with viz
+
+# Linux (uv)
+./scripts/build/build_linux_uv.sh 3.11 viz,dev
+
+# Windows (uv, PowerShell)
+.\scripts\build\build_win_uv.ps1 3.11 viz
 ```
-Vision Engineer (concrete)          Robot Engineer (abstract → implement)
-─────────────────────────           ─────────────────────────────────────
-CameraConfig                        BaseRobotAdapter
-  └─ hand-eye calibration              ├─ get_tool_transform()
-PickPoint                              ├─ resolve_redundancy()
-  └─ AI output → base frame            └─ to_robot_command()
-build_tcp_pose()                    
-  └─ position + normal → T_base2tcp FanucAdapter (example)
-                                    URAdapter (TODO)
-        ──── responsibility boundary ────
-              T_base2tcp handoff
-```
+
+
+
+**의존 방향:** `vision → core ← robot`, `viz → core + vision + robot`
+
+- **core** — 프레임 enum + 변환 수학. 양쪽 다 의존
+- **vision** — 카메라 설정, 피킹 포인트. `core`만 의존
+- **robot** — TCP 포즈 빌더, 어댑터. `core`만 의존. vision 몰라도 됨
+- **viz** — Rerun 3D 시각화. 전체를 시각화하므로 모두 참조 (optional dependency)
 
 ## Quick Start
 
 ```python
 from rigid_transform_kit import CameraConfig, PickPoint, build_tcp_pose
-from rigid_transform_kit.adapters import FanucAdapter
+from rigid_transform_kit.robot import FanucAdapter
 
-# 1. Camera config
+# 1. Camera config (vision 도메인)
 cam_config = CameraConfig.from_calibration_dict(
     calib={"camera_calibration": T_cam2base_4x4.tolist()},
     intrinsics=K, distortion=D,
 )
 
-# 2. AI output → base frame
+# 2. AI output → base frame (vision 도메인)
 pick = PickPoint(p_cam=ai_result["suction_xyz"], n_cam=ai_result["normal"])
 p_base, n_base = pick.to_base(cam_config)
 
-# 3. TCP pose (vision team's final output)
+# 3. TCP pose (robot 도메인)
 T_base2tcp = build_tcp_pose(p_base, n_base, contact_offset=0.005)
 
-# 4. Robot command (robot team's domain)
+# 4. Robot command (robot 도메인)
 robot = FanucAdapter(tool_z_offset=0.10)
 cmd = robot.plan_pick(T_base2tcp)
 # {"X": ..., "Y": ..., "Z": ..., "W": ..., "P": ..., "R": ...}
 ```
 
+### 3D Visualization (optional)
+
+```python
+from rigid_transform_kit.viz import TransformVisualizer
+
+vis = TransformVisualizer("my_pipeline")
+vis.log_picking_pipeline(cam_config, pick, T_base2tcp)
+```
+
 ## File Structure
 
 ```
-rigid_transform_kit/
-├── __init__.py          # public API
-├── core.py              # Frame, RigidTransform
-├── vision.py            # CameraConfig, PickPoint, build_tcp_pose
-└── adapters/
-    ├── __init__.py
-    ├── base.py          # BaseRobotAdapter (ABC)
-    └── fanuc.py         # FanucAdapter (reference impl)
-tests/
-├── test_core.py
-├── test_vision.py
-└── test_adapters.py
+src/rigid_transform_kit/
+├── __init__.py              # top-level re-export
+├── core/
+│   ├── __init__.py          # Frame, RigidTransform
+│   ├── frame.py             # Frame enum
+│   └── transform.py         # RigidTransform
+├── vision/
+│   ├── __init__.py          # CameraConfig, PickPoint
+│   ├── camera.py            # CameraConfig
+│   └── pick.py              # PickPoint
+├── robot/
+│   ├── __init__.py          # BaseRobotAdapter, FanucAdapter, build_tcp_pose
+│   ├── base.py              # BaseRobotAdapter (ABC)
+│   ├── fanuc.py             # FanucAdapter (reference impl)
+│   └── tcp.py               # build_tcp_pose
+└── viz/
+    ├── __init__.py          # TransformVisualizer
+    └── visualizer.py        # Rerun visualization (optional)
+
+scripts/build/
+├── build_linux_pip.sh       # Linux pip build
+├── build_linux_uv.sh        # Linux uv build
+└── build_win_uv.ps1         # Windows uv build
+
+examples/
+├── picking_pipeline.py      # Full pipeline example
+└── visualize_pipeline.py    # Pipeline + Rerun 3D visualization
 ```
 
 ## Extending
@@ -85,7 +123,7 @@ tests/
 ### New robot vendor
 
 ```python
-from rigid_transform_kit.adapters.base import BaseRobotAdapter
+from rigid_transform_kit.robot import BaseRobotAdapter
 
 class URAdapter(BaseRobotAdapter):
     def get_tool_transform(self) -> RigidTransform: ...
