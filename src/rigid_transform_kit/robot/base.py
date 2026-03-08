@@ -12,29 +12,45 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
+import numpy as np
+
 from ..core import Frame, RigidTransform
 
 
 class BaseRobotAdapter(ABC):
     """Abstract interface for robot-vendor-specific logic.
 
-    Subclass contract — implement these three:
-        1. get_tool_transform()    -> T_flange2tcp (gripper definition)
-        2. resolve_redundancy()    -> handle gripper symmetry (e.g. suction Z-180)
-        3. to_robot_command()      -> vendor-specific command format
+    Subclass contract — implement these two:
+        1. resolve_redundancy()    -> handle gripper symmetry (e.g. suction Z-180)
+        2. to_robot_command()      -> vendor-specific command format
+
+    ``get_tool_transform()`` is provided as a concrete default using
+    ``tool_z_offset`` and ``tool_rotation`` set in ``__init__``.
+    Override it if your tool definition is more complex.
 
     The template method `plan_pick()` chains them in order.
     """
 
-    # ---- abstract (robot team implements) ----
+    def __init__(
+        self,
+        tool_z_offset: float = 0.0,
+        tool_rotation: np.ndarray | None = None,
+    ):
+        self.tool_z_offset = tool_z_offset
+        self.tool_rotation = tool_rotation
 
-    @abstractmethod
+    # ---- tool (concrete, override if needed) ----
+
     def get_tool_transform(self) -> RigidTransform:
         """Return T_flange2tcp: flange -> tool center point.
 
-        Frame labels MUST be (FLANGE -> TCP).
+        Default: Z-offset + optional rotation.
         """
-        ...
+        T = np.eye(4)
+        T[2, 3] = self.tool_z_offset
+        if self.tool_rotation is not None:
+            T[:3, :3] = self.tool_rotation
+        return RigidTransform(T, Frame.FLANGE, Frame.TCP)
 
     @abstractmethod
     def resolve_redundancy(self, T_base2tcp: RigidTransform) -> RigidTransform:

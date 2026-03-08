@@ -19,24 +19,13 @@ from ..core import Frame, RigidTransform
 from .base import BaseRobotAdapter
 
 
-def R_to_FANUC_WPR(R: np.ndarray, deg_out: bool = True):
-    """Convert 3x3 rotation matrix to FANUC (W, P, R).
-
-    FANUC WPR = intrinsic Z-Y-X Euler angles.
-    scipy convention: 'ZYX' intrinsic = 'zyx' extrinsic.
-    """
-    r = Rotation.from_matrix(R)
-    wpr = r.as_euler("ZYX", degrees=deg_out)
-    return float(wpr[0]), float(wpr[1]), float(wpr[2])
-
-
 class FanucAdapter(BaseRobotAdapter):
     """FANUC robot adapter with suction cup redundancy resolution.
 
     Parameters
     ----------
     tool_z_offset : float
-        Flange -> TCP distance along Z (meters).
+        Flange -> TCP distance along Z (mm).
     tool_rotation : np.ndarray or None
         Additional rotation in tool definition (3x3).
     pos_unit : str
@@ -45,20 +34,12 @@ class FanucAdapter(BaseRobotAdapter):
 
     def __init__(
         self,
-        tool_z_offset: float,
+        tool_z_offset: float = 0.0,
         tool_rotation: np.ndarray | None = None,
         pos_unit: str = "mm",
     ):
-        self.tool_z_offset = tool_z_offset
-        self.tool_rotation = tool_rotation
+        super().__init__(tool_z_offset=tool_z_offset, tool_rotation=tool_rotation)
         self.pos_unit = pos_unit
-
-    def get_tool_transform(self) -> RigidTransform:
-        T = np.eye(4)
-        T[2, 3] = self.tool_z_offset
-        if self.tool_rotation is not None:
-            T[:3, :3] = self.tool_rotation
-        return RigidTransform(T, Frame.FLANGE, Frame.TCP)
 
     def resolve_redundancy(self, T_base2tcp: RigidTransform) -> RigidTransform:
         """Round suction cup: flip Z 180 if TCP X-axis aligns with base X.
@@ -81,16 +62,9 @@ class FanucAdapter(BaseRobotAdapter):
         assert T_base2flange.from_frame == Frame.BASE
         assert T_base2flange.to_frame == Frame.FLANGE
 
-        W, P, R = R_to_FANUC_WPR(T_base2flange.R, deg_out=True)
-        x, y, z = T_base2flange.t
-
-        scale = 1000.0 if self.pos_unit == "mm" else 1.0
-
-        return {
-            "X": x * scale,
-            "Y": y * scale,
-            "Z": z * scale,
-            "W": W,
-            "P": P,
-            "R": R,
-        }
+        cmd = T_base2flange.to_xyzwpr(degrees=True)
+        if self.pos_unit == "m":
+            cmd["X"] /= 1000.0
+            cmd["Y"] /= 1000.0
+            cmd["Z"] /= 1000.0
+        return cmd

@@ -105,6 +105,22 @@ class RigidTransform:
         euler = Rotation.from_matrix(self.R).as_euler(convention, degrees=degrees)
         return np.concatenate([self.t, euler])
 
+    def to_xyzwpr(self, degrees: bool = True) -> dict[str, float]:
+        """Return ``{X, Y, Z, W, P, R}`` dict.
+
+        WPR = intrinsic Z-Y-X Euler angles (scipy ``'ZYX'``).
+        Position unit is whatever the transform already uses (typically mm).
+        """
+        wpr = Rotation.from_matrix(self.R).as_euler("ZYX", degrees=degrees)
+        return {
+            "X": float(self.t[0]),
+            "Y": float(self.t[1]),
+            "Z": float(self.t[2]),
+            "W": float(wpr[0]),
+            "P": float(wpr[1]),
+            "R": float(wpr[2]),
+        }
+
     def to_pos_quat_xyzw(self):
         """Return (pos(3,), quat(4,)) in [qx,qy,qz,qw] order (scipy default)."""
         return self.t.copy(), Rotation.from_matrix(self.R).as_quat()

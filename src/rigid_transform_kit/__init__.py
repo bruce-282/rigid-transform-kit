@@ -19,4 +19,7 @@ def __getattr__(name: str):
     if name == "viz":
         from . import viz
         return viz
+    if name == "app":
+        from . import app
+        return app
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
