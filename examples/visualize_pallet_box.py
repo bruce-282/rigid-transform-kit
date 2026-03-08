@@ -9,7 +9,7 @@ Usage:
   python examples/visualize_pallet_sample.py
   python examples/visualize_pallet_sample.py --data-dir /path/to/dataset
   python examples/visualize_pallet_sample.py --box-pcd box1.ply box2.ply
-  python examples/visualize_pallet_sample.py --calibration cal.yml --intrinsic K.json --pcd scene.ply
+  python examples/visualize_pallet_sample.py --calibration cal.yml --pcd scene.ply
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from pathlib import Path
 import numpy as np
 
 from rigid_transform_kit import (
-    CameraConfig,
     Frame,
     PickPoint,
     RigidTransform,
@@ -28,15 +27,13 @@ from rigid_transform_kit import (
 )
 from rigid_transform_kit.viz import TransformVisualizer
 from utils import (
-    remove_statistical_outlier,
     fit_plane,
     get_box_axes,
     load_box_pcd,
     load_extrinsics,
-    load_intrinsics,
     load_ply_points,
     load_suction_pts,
-    save_suction_pts,
+    remove_statistical_outlier,
 )
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "datasets" / "aw_pallet"
@@ -58,13 +55,6 @@ def parse_args():
         default=DEFAULT_DATA_DIR / "calibration_result.yml",
         metavar="YAML",
         help="Camera calibration YAML (default: <data-dir>/calibration_result.yml)",
-    )
-    p.add_argument(
-        "--intrinsic",
-        type=Path,
-        default=DEFAULT_DATA_DIR / "intrinsics.json",
-        metavar="JSON",
-        help="Camera intrinsic JSON (default: <data-dir>/intrinsics.json)",
     )
     p.add_argument(
         "--suction-pts",
@@ -91,7 +81,6 @@ def parse_args():
         help="Box PLY file(s) for OBB-based pick; one pick per file",
     )
     args = p.parse_args()
-    d = args.data_dir
     return args
 
 
@@ -99,50 +88,38 @@ def main():
     args = parse_args()
 
     calib = load_extrinsics(args.calibration)
-    K, dist = load_intrinsics(args.intrinsic)
-    raw_mat = np.asarray(calib["camera_calibration"], dtype=np.float64)
-    mat_for_config = calib.get("camera_calibration_m")
-    if mat_for_config is None:
-        mat_for_config = raw_mat
-    cam_config = CameraConfig.from_calibration_dict(
-        calib={"camera_calibration": mat_for_config},
-        intrinsics=K,
-        distortion=dist,
-        depth_scale=0.001,
-        calib_convention="cam2base",
-    )
+    base2cam = calib["base2cam"]
+    T_cam2base_mm = np.linalg.inv(base2cam)
 
     picks: list[PickPoint] = []
 
     if args.suction_pts is not None:
-        picks = load_suction_pts(args.suction_pts, cam_config)
+        picks = load_suction_pts(args.suction_pts)
         print(f"Loaded {len(picks)} suction points from {args.suction_pts}.")
-        if picks:
-            save_suction_pts(picks, args.suction_pts)
     if args.box_pcd:
         for path in args.box_pcd:
             box_pcd = load_box_pcd(path)
             if box_pcd is not None:
-                box_pcd, _ = remove_statistical_outlier(box_pcd, nb_neighbors=20, std_ratio=1.0)
+                #box_pcd, _ = remove_statistical_outlier(box_pcd)
                 normal_cam, _, inlier_pcd = fit_plane(box_pcd)
-                _, long_axis, center, info = get_box_axes(inlier_pcd)
+                _, long_axis, center, info = get_box_axes(inlier_pcd, plane_normal=normal_cam)
                 picks.append(
                     PickPoint(p_cam=center, n_cam=normal_cam, long_axis_cam=long_axis)
                 )
-                print(f"Box {path.name}: center={center}, extent={info['extent_sorted']}, aspect={info['aspect_ratio']:.2f}")
+                print(f"Box {path.name}: center={center}, long={info['extent_long']:.1f}, short={info['extent_short']:.1f}, aspect={info['aspect_ratio']:.2f}")
         if not picks and args.suction_pts is None:
             print("No picks from box_pcd (files missing or empty).")
 
     vis = TransformVisualizer("pallet_sample1", spawn=True)
 
     # ── world = base (robot) coordinate system, all in mm ──
-    T_cam2base_mm = RigidTransform.from_matrix(raw_mat, Frame.CAMERA, Frame.BASE)
+    T_cam2base_mm = RigidTransform.from_matrix(T_cam2base_mm, Frame.CAMERA, Frame.BASE)
 
     vis.log_transform(
         "world/base",
         RigidTransform.identity(Frame.BASE),
         axis_length=300.0,
-        label="BASE",
+        label="WORLD=BASE",
     )
 
     T_base2cam_mm = T_cam2base_mm.inv
@@ -190,7 +167,7 @@ def main():
         print(f"Pick #{i}: TCP ({tcp_pose.t[0]:.1f}, {tcp_pose.t[1]:.1f}, {tcp_pose.t[2]:.1f}) mm")
 
     if tcp_poses:
-        vis.log_tcp_poses(tcp_poses, parent_path="world/picks", axis_length=80.0)
+        vis.log_tcp_poses(tcp_poses, parent_path="world/picks", axis_length=100.0, arrow_radius=8.0)
 
     print("\nRerun viewer에서 확인하세요.")
 

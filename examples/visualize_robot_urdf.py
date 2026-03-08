@@ -89,6 +89,7 @@ def main():
         intrinsics=K,
         distortion=D,
         depth_scale=1.0,
+        calib_key="camera_calibration",
         calib_convention="cam2base",
     )
 

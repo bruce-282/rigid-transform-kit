@@ -142,8 +142,9 @@ def run_picking_pipeline():
         calib=calibration_yml,
         intrinsics=K,
         distortion=D,
-        depth_scale=0.001,           # mm → m
-        calib_convention="cam2base",  # 기존 코드 convention
+        depth_scale=0.001,
+        calib_key="camera_calibration",
+        calib_convention="cam2base",
     )
 
     robot = FanucAdapter(

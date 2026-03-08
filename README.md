@@ -58,9 +58,9 @@ pip install -e ".[dev]"
 from rigid_transform_kit import CameraConfig, PickPoint, build_tcp_pose
 from rigid_transform_kit.robot import FanucAdapter
 
-# 1. Camera config (vision 도메인)
+# 1. Camera config (vision 도메인, base2cam 통일)
 cam_config = CameraConfig.from_calibration_dict(
-    calib={"camera_calibration": T_cam2base_4x4.tolist()},
+    calib={"base2cam": T_base2cam_4x4.tolist()},
     intrinsics=K, distortion=D,
 )
 
