@@ -3,6 +3,56 @@ import numpy as np
 from typing import Tuple, Dict
 
 
+def remove_statistical_outlier(
+    pcd: o3d.geometry.PointCloud,
+    nb_neighbors: int = 20,
+    std_ratio: float = 2.0,
+) -> Tuple[o3d.geometry.PointCloud, np.ndarray]:
+    """통계적 이상치 제거: 이웃과의 평균 거리가 표준편차 기준으로 먼 점 제거.
+
+    Parameters
+    ----------
+    pcd : PointCloud
+    nb_neighbors : 각 점에서 참조할 이웃 개수
+    std_ratio : 평균 거리 + std_ratio * std 보다 먼 점을 outlier로 제거
+
+    Returns
+    -------
+    filtered_pcd : PointCloud  inlier만 남긴 포인트 클라우드
+    inlier_indices : np.ndarray  유지된 점의 인덱스
+    """
+    filtered, ind = pcd.remove_statistical_outlier(
+        nb_neighbors=nb_neighbors,
+        std_ratio=std_ratio,
+    )
+    return filtered, np.asarray(ind)
+
+
+def remove_radius_outlier(
+    pcd: o3d.geometry.PointCloud,
+    nb_points: int = 16,
+    radius: float = 1.0,
+) -> Tuple[o3d.geometry.PointCloud, np.ndarray]:
+    """반경 이상치 제거: 반경 내 이웃이 nb_points 미만인 점 제거.
+
+    Parameters
+    ----------
+    pcd : PointCloud
+    nb_points : 반경 내 최소 이웃 개수
+    radius : 이웃 탐색 반경 (점 좌표 단위)
+
+    Returns
+    -------
+    filtered_pcd : PointCloud
+    inlier_indices : np.ndarray
+    """
+    filtered, ind = pcd.remove_radius_outlier(
+        nb_points=nb_points,
+        radius=radius,
+    )
+    return filtered, np.asarray(ind)
+
+
 def fit_plane(
     pcd: o3d.geometry.PointCloud,
     distance_threshold: float = 5.0,
