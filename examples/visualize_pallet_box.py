@@ -7,15 +7,15 @@ Requires: pip install rigid-transform-kit[viz]  (and open3d for PLY)
 
 Usage:
   python examples/visualize_pallet_box.py
-  python examples/visualize_pallet_box.py --data-dir /path/to/dataset
+  python examples/visualize_pallet_box.py --save output.rrd   # save then open (avoids spawn+save conflict)
   python examples/visualize_pallet_box.py --box-pcd box1.ply box2.ply
-  python examples/visualize_pallet_box.py --calibration cal.yml --pcd scene.ply
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -82,11 +82,11 @@ def parse_args():
         help="Box PLY file(s) for OBB-based pick; one pick per file",
     )
     p.add_argument(
-        "--save_recording",
+        "--save",
         type=Path,
-        default= "/output/recording.rrd",
+        default=None,
         metavar="RRD",
-        help="Save Rerun recording to .rrd file",
+        help="Save to .rrd file (use viewer Save when spawn=True; --save avoids spawn conflict)",
     )
     return p.parse_args()
 
@@ -108,7 +108,11 @@ def main():
         picks = []
         log.warning("No pick points found.")
 
-    vis = TransformVisualizer("box_palletizing", spawn=True)
+    # rr.spawn() and rr.save() conflict — use spawn=False when saving to file
+    spawn = args.save is None
+    if not spawn:
+        log.info("Saving to file (spawn disabled); viewer will open after save.")
+    vis = TransformVisualizer("box_palletizing", spawn=spawn)
 
     # ── world = base (robot) coordinate system, all in mm ──
     vis.log_transform(
@@ -167,11 +171,16 @@ def main():
         show_axes=has_axes or None,
     )
 
-    if args.save_recording is not None:
-        save_recording(args.save_recording)
-        log.info("Saved recording to %s", args.save_recording)
+    if args.save is not None:
+        save_recording(args.save)
+        log.info("Saved to %s", args.save)
+        try:
+            subprocess.run(["rerun", str(args.save)], check=False)
+        except FileNotFoundError:
+            log.info("Run: rerun %s", args.save)
 
-    log.info("\nRerun viewer - 'Overview (in Base)' / 'Scene (in Camera)' / 'Scene (in Base)' tab.")
+    if spawn:
+        log.info("\nRerun viewer - 'Overview (in Base)' / 'Scene (in Camera)' / 'Scene (in Base)' tab.")
 
 
 if __name__ == "__main__":

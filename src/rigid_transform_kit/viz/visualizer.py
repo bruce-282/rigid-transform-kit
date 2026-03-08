@@ -122,7 +122,10 @@ class TransformVisualizer:
         """Create and send a tabbed Spatial3DView blueprint."""
         import rerun.blueprint as rrb
 
-        tabs = [rrb.Spatial3DView(name=name, origin=origin) for name, origin in views]
+        tabs = [
+            rrb.Spatial3DView(name=name, origin=origin, contents=[f"+ {origin}/**"])
+            for name, origin in views
+        ]
         rr.send_blueprint(rrb.Blueprint(rrb.Tabs(*tabs)))
 
     # ---- transform logging ----
