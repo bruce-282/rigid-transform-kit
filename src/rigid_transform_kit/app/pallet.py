@@ -76,7 +76,7 @@ def picks_to_tcp_poses(
     return tcp_poses
 
 
-def picks_to_tcp_poses_dual(
+def picks_to_tcp_poses_base_and_cam(
     picks: Sequence[PickPoint],
     T_cam2base: RigidTransform,
 ) -> tuple[list[RigidTransform], list[RigidTransform], list[bool]]:

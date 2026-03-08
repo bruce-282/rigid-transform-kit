@@ -26,7 +26,7 @@ from rigid_transform_kit.app import (
     load_calibration,
     load_cam_targets,
     log_robot_commands,
-    picks_to_tcp_poses_dual,
+    picks_to_tcp_poses_base_and_cam,
 )
 from rigid_transform_kit.viz import TransformVisualizer
 from utils import load_ply_points
@@ -136,7 +136,7 @@ def main():
         log.info("Logged %d points from PLY (colors=%s).", len(pts_base), "yes" if colors_cam is not None else "no")
 
     # ── TCP poses (base + cam frames) ──
-    tcp_poses_base, tcp_poses_cam, has_axes = picks_to_tcp_poses_dual(picks, T_cam2base)
+    tcp_poses_base, tcp_poses_cam, has_axes = picks_to_tcp_poses_base_and_cam(picks, T_cam2base)
 
     fanuc = FanucAdapter(pos_unit="mm")
     robot_commands = [fanuc.plan_pick(pose) for pose in tcp_poses_base]
