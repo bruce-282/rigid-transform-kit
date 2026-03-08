@@ -47,9 +47,8 @@ INTRINSIC_JSON = DATA_DIR / "intrinsics.json"
 #SUCTION_PTS_JSON = DATA_DIR / "suction_pts.json"
 SUCTION_PTS_JSON = None
 PCD_PLY = DATA_DIR / "pcd.ply"
-box_pcd = DATA_DIR / "box_pcd1.ply"
+box_pcd1 = DATA_DIR / "box_pcd1.ply"
 
-ROBOT_URDF = Path(__file__).resolve().parent.parent / "data" / "robot" / "fanuc_r2000ic_description"
 
 
 
@@ -289,18 +288,7 @@ def main():
 
     vis = TransformVisualizer("pallet_sample1", spawn=True)
 
-    # ── Robot URDF ──
-    if ROBOT_URDF.exists():
-        urdf_tree = vis.load_urdf(ROBOT_URDF)
-        joint_names = [j.name for j in urdf_tree.joints()
-                       if j.joint_type in ("revolute", "prismatic", "continuous")]
-        print(f"Robot loaded: {len(joint_names)} joints")
-
     # ── world = base (robot) coordinate system, all in mm ──
-    # All entities go under "world/robot" so they share the URDF's transform tree.
-    # URDF base_link = world/robot/base_link = robot base origin.
-    ROOT = "world/robot/base_link"
-
     raw_mat = np.array(
         yaml.safe_load(open(CALIBRATION_YML, encoding="utf-8"))
         .get("config", {})["camera_calibration"],
@@ -308,33 +296,25 @@ def main():
     )
     T_cam2base_mm = RigidTransform.from_matrix(raw_mat, Frame.CAMERA, Frame.BASE)
 
-    # Base axes (don't overwrite base_link's transform — just add visual arrows)
-    import rerun as rr
-    axes = np.eye(3) * 300.0
-    rr.log(
-        f"{ROOT}/base_axes",
-        rr.Arrows3D(
-            origins=[[0, 0, 0]] * 3,
-            vectors=axes.tolist(),
-            colors=[[220, 40, 40], [40, 180, 40], [40, 80, 220]],
-            labels=["BASE X", "BASE Y", "BASE Z"],
-        ),
+    vis.log_transform(
+        "world/base",
+        RigidTransform.identity(Frame.BASE),
+        axis_length=300.0,
+        label="BASE",
     )
 
-    # Camera position in base frame
     T_base2cam_mm = T_cam2base_mm.inv
     cam_pose = RigidTransform.from_Rt(
         T_cam2base_mm.R, T_base2cam_mm.t,
         Frame.BASE, Frame.CAMERA,
     )
     vis.log_transform(
-        f"{ROOT}/camera",
+        "world/camera",
         cam_pose,
         axis_length=200.0,
         label="CAMERA",
     )
 
-    # Point cloud: camera frame mm -> base frame mm
     ply_data = load_ply_points(PCD_PLY)
     if ply_data is not None:
         pts_cam, colors_cam = ply_data
@@ -342,14 +322,13 @@ def main():
             pts_cam = pts_cam * 1000.0
         pts_base = T_cam2base_mm.transform_points(pts_cam)
         vis.log_points(
-            f"{ROOT}/pcd",
+            "world/pcd",
             pts_base,
             colors=colors_cam,
             radii=3.0,
         )
         print(f"Logged {len(pts_base)} points from PLY (colors={'yes' if colors_cam is not None else 'no'}).")
 
-    # Pick points → TCP poses in base frame, visualize 3 axes
     tcp_poses = []
     for i, pick in enumerate(picks):
         p_cam_mm = pick.p_cam * 1000.0 if np.median(np.abs(pick.p_cam)) < 10 else pick.p_cam
@@ -369,7 +348,7 @@ def main():
         print(f"Pick #{i}: TCP ({tcp_pose.t[0]:.1f}, {tcp_pose.t[1]:.1f}, {tcp_pose.t[2]:.1f}) mm")
 
     if tcp_poses:
-        vis.log_tcp_poses(tcp_poses, parent_path=f"{ROOT}/picks", axis_length=80.0)
+        vis.log_tcp_poses(tcp_poses, parent_path="world/picks", axis_length=80.0)
 
     print("\nRerun viewer에서 확인하세요.")
 
