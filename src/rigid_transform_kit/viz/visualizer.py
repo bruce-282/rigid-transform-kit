@@ -17,8 +17,7 @@ Usage::
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Optional, Sequence
 
 import numpy as np
 
@@ -29,7 +28,6 @@ if TYPE_CHECKING:
 
 try:
     import rerun as rr
-    import rerun.urdf as rr_urdf
 
     _HAS_RERUN = True
 except ImportError:
@@ -69,6 +67,13 @@ AXIS_COLORS = [
 # TransformVisualizer
 # ============================================================
 
+DEFAULT_VIEWS: list[tuple[str, str]] = [
+    ("Overview (in Base)", "world"),
+    ("Scene (in Camera)", "cam_view"),
+    ("Scene (in Base)", "scene_base"),
+]
+
+
 class TransformVisualizer:
     """Rerun-based 3D visualizer for rigid transform pipelines.
 
@@ -78,9 +83,18 @@ class TransformVisualizer:
         Rerun application identifier.
     spawn : bool
         If True, spawn the Rerun viewer on init.
+    views : list of (name, origin) tuples or None
+        Spatial3DView tabs to create in the Rerun blueprint.
+        Each tuple is ``("Tab Name", "entity_origin")``.
+        Defaults to :data:`DEFAULT_VIEWS`.
     """
 
-    def __init__(self, app_id: str = "rigid_transform_kit", spawn: bool = True):
+    def __init__(
+        self,
+        app_id: str = "rigid_transform_kit",
+        spawn: bool = True,
+        views: Optional[list[tuple[str, str]]] = None,
+    ):
         _require_rerun()
         rr.init(app_id)
         if spawn:
@@ -88,6 +102,16 @@ class TransformVisualizer:
 
         rr.log("/", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
         rr.log("world", rr.Transform3D(translation=[0, 0, 0]), static=True)
+
+        self._build_blueprint(views or DEFAULT_VIEWS)
+
+    @staticmethod
+    def _build_blueprint(views: list[tuple[str, str]]) -> None:
+        """Create and send a tabbed Spatial3DView blueprint."""
+        import rerun.blueprint as rrb
+
+        tabs = [rrb.Spatial3DView(name=name, origin=origin) for name, origin in views]
+        rr.send_blueprint(rrb.Blueprint(rrb.Tabs(*tabs)))
 
     # ---- transform logging ----
 
@@ -259,8 +283,9 @@ class TransformVisualizer:
         axis_length: float = 0.06,
         arrow_radius: Optional[float] = None,
         label: str = "tcp",
+        show_axes: bool = True,
     ) -> None:
-        """Log a TCP target pose as a point with 3-axis arrows (XYZ = RGB).
+        """Log a TCP target pose as a point, optionally with 3-axis arrows.
 
         Parameters
         ----------
@@ -274,34 +299,39 @@ class TransformVisualizer:
             Radius of each axis arrow shaft. Defaults to axis_length * 0.04.
         label : str
             Entity name and display label.
+        show_axes : bool
+            If False, only the origin point is shown (no XYZ arrows).
         """
         entity = f"{parent_path}/{label}"
         t = T_base2tcp.t
         R = T_base2tcp.R
         r = arrow_radius if arrow_radius is not None else axis_length * 0.04
+        approach_dir = R[:, 2]
+        t_lifted = t + approach_dir * axis_length * 0.15
 
         rr.log(
             f"{entity}/origin",
             rr.Points3D(
-                [t.tolist()],
+                [t_lifted.tolist()],
                 colors=[[255, 200, 50]],
                 radii=[r * 2.5],
                 labels=[label.upper()],
             ),
         )
-        rr.log(
-            f"{entity}/axes",
-            rr.Arrows3D(
-                origins=[t.tolist()] * 3,
-                vectors=[
-                    (R[:, 0] * axis_length).tolist(),
-                    (R[:, 1] * axis_length).tolist(),
-                    (R[:, 2] * axis_length).tolist(),
-                ],
-                colors=AXIS_COLORS,
-                radii=[r] * 3,
-            ),
-        )
+        if show_axes:
+            rr.log(
+                f"{entity}/axes",
+                rr.Arrows3D(
+                    origins=[t_lifted.tolist()] * 3,
+                    vectors=[
+                        (R[:, 0] * axis_length).tolist(),
+                        (R[:, 1] * axis_length).tolist(),
+                        (R[:, 2] * axis_length).tolist(),
+                    ],
+                    colors=AXIS_COLORS,
+                    radii=[r] * 3,
+                ),
+            )
 
     def log_tcp_poses(
         self,
@@ -310,15 +340,18 @@ class TransformVisualizer:
         parent_path: str = "world/picks",
         axis_length: float = 0.06,
         arrow_radius: Optional[float] = None,
+        show_axes: Optional[Sequence[bool]] = None,
     ) -> None:
         """Log multiple TCP poses at once."""
         for i, pose in enumerate(poses):
+            axes = show_axes[i] if show_axes is not None else True
             self.log_tcp_pose(
                 pose,
                 parent_path=parent_path,
                 axis_length=axis_length,
                 arrow_radius=arrow_radius,
                 label=f"tcp_{i}",
+                show_axes=axes,
             )
 
     # ---- robot command result ----
@@ -336,6 +369,135 @@ class TransformVisualizer:
             T_base2flange,
             axis_length=axis_length,
             label="FLANGE",
+        )
+
+    # ---- scene view (generic) ----
+
+    def _log_scene_view(
+        self,
+        prefix: str,
+        pts: Optional[np.ndarray] = None,
+        colors: Optional[np.ndarray] = None,
+        tcp_poses: Optional[Sequence[RigidTransform]] = None,
+        show_axes: Optional[Sequence[bool]] = None,
+        *,
+        radii: float = 3.0,
+        axis_length: float = 100.0,
+        show_origin: bool = False,
+        origin_axis_length: float = 300.0,
+    ) -> None:
+        """Log a scene view under *prefix* (PCD + pick orientations).
+
+        This is the shared implementation behind all ``log_scene_*``
+        public methods.  Each public wrapper simply forwards its
+        arguments with the appropriate *prefix* and defaults.
+
+        Parameters
+        ----------
+        prefix : str
+            Rerun entity path prefix (e.g. ``"cam_view"``, ``"scene_base"``).
+        pts : (N,3) array or None
+            Point cloud (mm).
+        colors : (N,3) uint8 array or None
+            Per-point colors.
+        tcp_poses : sequence of RigidTransform or None
+            Pick/TCP poses. Z axis is flipped to show camera direction.
+        show_axes : list of bool or None
+            Per-pose flag; False = origin point only (no arrows).
+        radii : float
+            Point / arrow shaft radius.
+        axis_length : float
+            Length of pick orientation arrows (mm).
+        show_origin : bool
+            If True, draw XYZ axes at the coordinate-frame origin.
+        origin_axis_length : float
+            Length of origin axes (mm).
+        """
+        if show_origin:
+            rr.log(f"{prefix}/origin", rr.Transform3D(translation=[0, 0, 0]), static=True)
+            axes_vecs = np.eye(3) * origin_axis_length
+            rr.log(
+                f"{prefix}/origin/axes",
+                rr.Arrows3D(
+                    origins=[[0, 0, 0]] * 3,
+                    vectors=axes_vecs.tolist(),
+                    colors=AXIS_COLORS,
+                    labels=["X", "Y", "Z"],
+                ),
+                static=True,
+            )
+
+        if pts is not None:
+            kwargs = {}
+            if colors is not None:
+                kwargs["colors"] = colors
+            rr.log(f"{prefix}/pcd", rr.Points3D(pts, radii=[radii], **kwargs), static=True)
+
+        if tcp_poses:
+            for i, pose in enumerate(tcp_poses):
+                draw = show_axes[i] if show_axes is not None else True
+                t = pose.t
+                R = pose.R
+                cam_dir = -R[:, 2]
+                t_lifted = t + cam_dir * axis_length * 0.15
+                rr.log(
+                    f"{prefix}/pick_{i}/origin",
+                    rr.Points3D(
+                        [t_lifted.tolist()],
+                        colors=[[255, 200, 50]],
+                        radii=[radii * 2.5],
+                        labels=[f"Pick_{i}"],
+                    ),
+                    static=True,
+                )
+                if draw:
+                    z_vec = cam_dir * axis_length
+                    y_vec = -R[:, 1] * axis_length
+                    x_vec = R[:, 0] * axis_length
+                    rr.log(
+                        f"{prefix}/pick_{i}/axes",
+                        rr.Arrows3D(
+                            origins=[t_lifted.tolist()] * 3,
+                            vectors=[x_vec.tolist(), y_vec.tolist(), z_vec.tolist()],
+                            colors=AXIS_COLORS,
+                            radii=[radii] * 3,
+                            labels=["X", "Y", "Z (->cam)"],
+                        ),
+                        static=True,
+                    )
+
+    # ---- scene view public wrappers ----
+
+    def log_scene_in_camera(
+        self,
+        pts_cam: Optional[np.ndarray] = None,
+        colors: Optional[np.ndarray] = None,
+        tcp_poses: Optional[Sequence[RigidTransform]] = None,
+        show_axes: Optional[Sequence[bool]] = None,
+        *,
+        radii: float = 3.0,
+        axis_length: float = 100.0,
+    ) -> None:
+        """Scene view in camera frame (no origin axes)."""
+        self._log_scene_view(
+            "cam_view", pts_cam, colors, tcp_poses, show_axes,
+            radii=radii, axis_length=axis_length, show_origin=False,
+        )
+
+    def log_scene_base(
+        self,
+        pts_base: Optional[np.ndarray] = None,
+        colors: Optional[np.ndarray] = None,
+        tcp_poses: Optional[Sequence[RigidTransform]] = None,
+        show_axes: Optional[Sequence[bool]] = None,
+        *,
+        radii: float = 4.0,
+        axis_length: float = 100.0,
+    ) -> None:
+        """Scene view in base frame (with origin axes)."""
+        self._log_scene_view(
+            "scene_base", pts_base, colors, tcp_poses, show_axes,
+            radii=radii, axis_length=axis_length, show_origin=True,
         )
 
     # ---- point cloud helpers ----
@@ -414,183 +576,3 @@ class TransformVisualizer:
                 label=f"FLANGE_{index}",
             )
 
-    # ---- URDF robot visualization ----
-
-    @staticmethod
-    def _resolve_urdf_packages(
-        urdf_file: Path, pkg_search_dir: Path
-    ) -> Path:
-        """Replace ``package://`` URIs with absolute ``file:///`` paths.
-
-        Returns a temporary URDF file with resolved paths so that
-        Rerun's data-loader (which may run in a subprocess without
-        inheriting ``ROS_PACKAGE_PATH``) can locate mesh assets.
-        """
-        import re
-        import tempfile
-
-        text = urdf_file.read_text(encoding="utf-8")
-
-        def _replace(m: re.Match) -> str:
-            pkg_name = m.group(1)
-            rel_path = m.group(2)
-            abs_path = (pkg_search_dir / pkg_name / rel_path).resolve()
-            return str(abs_path)
-
-        resolved = re.sub(
-            r"package://([^/]+)/(.*?)(\")",
-            lambda m: _replace(m) + '"',
-            text,
-        )
-
-        if resolved == text:
-            return urdf_file
-
-        tmp = Path(tempfile.mktemp(suffix=".urdf", prefix="rr_"))
-        tmp.write_text(resolved, encoding="utf-8")
-        return tmp
-
-    def load_urdf(
-        self,
-        urdf_path: Union[str, Path],
-        *,
-        package_path: Optional[Union[str, Path]] = None,
-        static: bool = True,
-    ) -> rr_urdf.UrdfTree:
-        """Load a URDF file into the viewer and return the parsed tree.
-
-        Works with any robot vendor (FANUC, UR, ABB, KUKA, ...) as long
-        as a valid URDF + mesh files are provided.
-
-        Parameters
-        ----------
-        urdf_path : str or Path
-            Path to a ``.urdf`` file **or** a ROS package directory
-            containing a ``urdf/`` subfolder.  When a directory is given
-            the first ``.urdf`` file found under ``<dir>/urdf/`` is used.
-        package_path : str, Path, or None
-            Directory to resolve ``package://`` URIs in the URDF.
-            If None, auto-detected as the parent of the package directory
-            (works for standard ``<pkg>/urdf/robot.urdf`` layouts).
-        static : bool
-            If True, log the URDF geometry as a static (non-time-varying) resource.
-
-        Returns
-        -------
-        rr.urdf.UrdfTree
-            Parsed URDF tree, used for joint animation.
-        """
-        import os
-
-        urdf_path = Path(urdf_path).resolve()
-
-        if urdf_path.is_dir():
-            urdf_dir = urdf_path / "urdf"
-            candidates = sorted(urdf_dir.glob("*.urdf")) if urdf_dir.is_dir() else []
-            if not candidates:
-                candidates = sorted(urdf_path.rglob("*.urdf"))
-            if not candidates:
-                raise FileNotFoundError(
-                    f"No .urdf file found in directory: {urdf_path}"
-                )
-            urdf_file = candidates[0]
-            pkg_root = urdf_path
-        else:
-            urdf_file = urdf_path
-            # Standard layout: <pkg_root>/urdf/robot.urdf
-            pkg_root = urdf_file.parent.parent
-
-        if not urdf_file.exists():
-            raise FileNotFoundError(f"URDF not found: {urdf_file}")
-
-        if package_path is not None:
-            pkg_dir = Path(package_path).resolve()
-        else:
-            pkg_dir = pkg_root.parent
-
-        # Also set ROS_PACKAGE_PATH for any code that reads it at runtime.
-        pkg_dir_str = str(pkg_dir)
-        existing = os.environ.get("ROS_PACKAGE_PATH", "")
-        if pkg_dir_str not in existing.split(os.pathsep):
-            os.environ["ROS_PACKAGE_PATH"] = (
-                f"{pkg_dir_str}{os.pathsep}{existing}" if existing else pkg_dir_str
-            )
-
-        robot_entity_prefix = "world/robot"
-        rr.log(robot_entity_prefix, rr.Transform3D(translation=[0, 0, 0]), static=True)
-
-        resolved_urdf = self._resolve_urdf_packages(urdf_file, pkg_dir)
-        try:
-            rr.log_file_from_path(
-                str(resolved_urdf),
-                entity_path_prefix=robot_entity_prefix,
-                static=static,
-            )
-            tree = rr_urdf.UrdfTree.from_file_path(
-                str(resolved_urdf),
-                entity_path_prefix=robot_entity_prefix,
-            )
-        finally:
-            if resolved_urdf != urdf_file:
-                resolved_urdf.unlink(missing_ok=True)
-
-        self._urdf_tree = tree
-        self._urdf_entity_prefix = robot_entity_prefix
-        return tree
-
-    def set_joint_angles(
-        self,
-        joint_angles: Dict[str, float],
-        *,
-        urdf_tree: Optional[rr_urdf.UrdfTree] = None,
-    ) -> None:
-        """Set robot joint angles and log the resulting transforms.
-
-        Parameters
-        ----------
-        joint_angles : dict
-            Mapping of joint name -> angle (radians).
-            Joints not in the dict keep their URDF default.
-        urdf_tree : UrdfTree or None
-            Parsed URDF tree. If None, uses the tree from the last ``load_urdf`` call.
-        """
-        tree = urdf_tree or getattr(self, "_urdf_tree", None)
-        if tree is None:
-            raise RuntimeError("No URDF loaded. Call load_urdf() first.")
-
-        for joint in tree.joints():
-            if joint.joint_type in ("revolute", "prismatic", "continuous"):
-                angle = joint_angles.get(joint.name, 0.0)
-                transform = joint.compute_transform(angle, clamp=True)
-                rr.log("transforms", transform)
-
-    def animate_joints(
-        self,
-        joint_trajectory: List[Dict[str, float]],
-        *,
-        dt: float = 0.03,
-        timeline: str = "robot_time",
-        urdf_tree: Optional[rr_urdf.UrdfTree] = None,
-    ) -> None:
-        """Animate a sequence of joint angle snapshots.
-
-        Parameters
-        ----------
-        joint_trajectory : list of dict
-            Each element is a ``{joint_name: angle_rad}`` snapshot.
-        dt : float
-            Time step between snapshots (seconds).
-        timeline : str
-            Rerun timeline name.
-        urdf_tree : UrdfTree or None
-            Parsed URDF tree. If None, uses the tree from the last ``load_urdf`` call.
-        """
-        tree = urdf_tree or getattr(self, "_urdf_tree", None)
-        if tree is None:
-            raise RuntimeError("No URDF loaded. Call load_urdf() first.")
-
-        t = 0.0
-        for snapshot in joint_trajectory:
-            rr.set_time(timeline, duration=t)
-            self.set_joint_angles(snapshot, urdf_tree=tree)
-            t += dt

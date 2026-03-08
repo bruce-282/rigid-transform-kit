@@ -88,15 +88,15 @@ def main():
     args = parse_args()
 
     calib = load_extrinsics(args.calibration)
-    base2cam = calib["base2cam"]
-    T_cam2base_mm = np.linalg.inv(base2cam)
+    T_base2cam = RigidTransform.from_matrix(calib["base2cam"], Frame.BASE, Frame.CAMERA)
+    T_cam2base = T_base2cam.inv
 
     picks: list[PickPoint] = []
 
     if args.cam_targets is not None:
         picks = load_cam_targets(args.cam_targets)
         print(f"Loaded {len(picks)} cam_targets from {args.cam_targets}.")
-    if args.box_pcd:
+    elif args.box_pcd:
         for path in args.box_pcd:
             box_pcd = load_box_pcd(path)
             if box_pcd is not None:
@@ -107,14 +107,12 @@ def main():
                     PickPoint(p_cam=center, n_cam=normal_cam, long_axis_cam=long_axis)
                 )
                 print(f"Box {path.name}: center={center}, long={info['extent_long']:.1f}, short={info['extent_short']:.1f}, aspect={info['aspect_ratio']:.2f}")
-        if not picks and args.cam_targets is None:
-            print("No picks from box_pcd (files missing or empty).")
+    else:
+        print("No pick points found.")
 
     vis = TransformVisualizer("pallet_sample1", spawn=True)
 
     # ── world = base (robot) coordinate system, all in mm ──
-    T_cam2base_mm = RigidTransform.from_matrix(T_cam2base_mm, Frame.CAMERA, Frame.BASE)
-
     vis.log_transform(
         "world/base",
         RigidTransform.identity(Frame.BASE),
@@ -122,9 +120,8 @@ def main():
         label="WORLD=BASE",
     )
 
-    T_base2cam_mm = T_cam2base_mm.inv
     cam_pose = RigidTransform.from_Rt(
-        T_cam2base_mm.R, T_base2cam_mm.t,
+        T_cam2base.R, T_base2cam.t,
         Frame.BASE, Frame.CAMERA,
     )
     vis.log_transform(
@@ -134,42 +131,67 @@ def main():
         label="CAMERA",
     )
 
+    # ── Load PCD ──
+    pts_cam_mm = None
+    pts_base = None
+    colors_cam = None
     ply_data = load_ply_points(args.pcd)
     if ply_data is not None:
-        pts_cam, colors_cam = ply_data
-        if np.median(np.abs(pts_cam)) < 10:
-            pts_cam = pts_cam * 1000.0
-        pts_base = T_cam2base_mm.transform_points(pts_cam)
-        vis.log_points(
-            "world/pcd",
-            pts_base,
-            colors=colors_cam,
-            radii=3.0,
-        )
+        pts_cam_mm, colors_cam = ply_data
+        if np.median(np.abs(pts_cam_mm)) < 10:
+            pts_cam_mm = pts_cam_mm * 1000.0
+
+        pts_base = T_cam2base.transform_points(pts_cam_mm)
+        vis.log_points("world/pcd", pts_base, colors=colors_cam, radii=3.0)
         print(f"Logged {len(pts_base)} points from PLY (colors={'yes' if colors_cam is not None else 'no'}).")
 
-    tcp_poses = []
+    tcp_poses_base = []
+    tcp_poses_cam = []
+    has_axes = []
     for i, pick in enumerate(picks):
         p_cam_mm = pick.p_cam * 1000.0 if np.median(np.abs(pick.p_cam)) < 10 else pick.p_cam
-        p_base = T_cam2base_mm.transform_point(p_cam_mm)
+        p_base = T_cam2base.transform_point(p_cam_mm)
 
         n_cam = pick.n_cam if pick.n_cam is not None else np.array([0.0, 0.0, -1.0])
-        n_base = T_cam2base_mm.transform_direction(n_cam)
+        n_base = T_cam2base.transform_direction(n_cam)
         n_base = n_base / (np.linalg.norm(n_base) + 1e-12)
 
-        long_hint = None
+        long_hint_base = None
+        long_hint_cam = None
         if pick.long_axis_cam is not None:
-            long_hint = T_cam2base_mm.transform_direction(pick.long_axis_cam)
-            long_hint = long_hint / (np.linalg.norm(long_hint) + 1e-12)
+            long_hint_cam = pick.long_axis_cam
+            long_hint_base = T_cam2base.transform_direction(long_hint_cam)
+            long_hint_base = long_hint_base / (np.linalg.norm(long_hint_base) + 1e-12)
 
-        tcp_pose = build_tcp_pose(p_base, n_base, long_axis_hint=long_hint)
-        tcp_poses.append(tcp_pose)
-        print(f"Pick #{i}: TCP ({tcp_pose.t[0]:.1f}, {tcp_pose.t[1]:.1f}, {tcp_pose.t[2]:.1f}) mm")
+        tcp_base = build_tcp_pose(p_base, n_base, long_axis_hint=long_hint_base)
+        tcp_cam = build_tcp_pose(p_cam_mm, n_cam, long_axis_hint=long_hint_cam)
+        tcp_poses_base.append(tcp_base)
+        tcp_poses_cam.append(tcp_cam)
+        show = pick.n_cam is not None
+        has_axes.append(show)
+        tag = "TCP" if show else "center"
+        print(f"Pick #{i}: {tag} ({tcp_base.t[0]:.1f}, {tcp_base.t[1]:.1f}, {tcp_base.t[2]:.1f}) mm")
 
-    if tcp_poses:
-        vis.log_tcp_poses(tcp_poses, parent_path="world/picks", axis_length=100.0, arrow_radius=8.0)
+    if tcp_poses_base:
+        vis.log_tcp_poses(tcp_poses_base, parent_path="world/picks", axis_length=100.0, arrow_radius=2.0, show_axes=has_axes)
 
-    print("\nRerun viewer에서 확인하세요.")
+    # ── Scene in camera-frame view (second tab) ──
+    vis.log_scene_in_camera(
+        pts_cam=pts_cam_mm,
+        colors=colors_cam,
+        tcp_poses=tcp_poses_cam if tcp_poses_cam else None,
+        show_axes=has_axes if tcp_poses_cam else None,
+    )
+
+    # ── Scene in base-frame view (third tab) ──
+    vis.log_scene_base(
+        pts_base=pts_base,
+        colors=colors_cam,
+        tcp_poses=tcp_poses_base if tcp_poses_base else None,
+        show_axes=has_axes if tcp_poses_base else None,
+    )
+
+    print("\nRerun viewer - 'Overview (in Base)' / 'Scene (in Camera)' / 'Scene (in Base)' tab.")
 
 
 if __name__ == "__main__":

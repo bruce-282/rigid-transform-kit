@@ -72,9 +72,6 @@ def parse_args():
             DEFAULT_DATA_DIR / "box_pcd1.ply",
             DEFAULT_DATA_DIR / "box_pcd2.ply",
             DEFAULT_DATA_DIR / "box_pcd3.ply",
-            DEFAULT_DATA_DIR / "box_pcd4.ply",
-            DEFAULT_DATA_DIR / "box_pcd5.ply",
-            DEFAULT_DATA_DIR / "box_pcd6.ply",
         ],
         metavar="PLY",
         help="Box PLY file(s) for pick point extraction; one pick per file",
@@ -154,9 +151,8 @@ def main():
 
     # ── Load calibration ──
     calib = load_extrinsics(args.calibration)
-    base2cam = calib["base2cam"]
-    cam2base_mat = np.linalg.inv(base2cam)
-    T_cam2base = RigidTransform.from_matrix(cam2base_mat, Frame.CAMERA, Frame.BASE)
+    T_base2cam = RigidTransform.from_matrix(calib["base2cam"], Frame.BASE, Frame.CAMERA)
+    T_cam2base = T_base2cam.inv
     print(f"Calibration loaded: {args.calibration}")
 
     # ── Extract pick points ──
@@ -166,7 +162,7 @@ def main():
         picks = load_cam_targets(args.cam_targets)
         print(f"Loaded {len(picks)} cam_targets from {args.cam_targets}")
 
-    if args.box_pcd:
+    elif args.box_pcd:
         print(f"Extracting picks from {len(args.box_pcd)} box PLY files:")
         picks.extend(extract_picks_from_boxes(args.box_pcd))
 

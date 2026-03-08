@@ -22,7 +22,7 @@ import argparse
 import math
 from pathlib import Path
 
-from rigid_transform_kit.viz import TransformVisualizer
+from rigid_transform_kit.viz import UrdfVisualizer
 
 DEFAULT_URDF = Path(__file__).resolve().parent.parent / "data" / "robot" / "fanuc_m710ic_description" / "urdf" / "m710ic70.urdf"
 
@@ -43,7 +43,7 @@ def main():
         print(f"URDF not found: {args.urdf}")
         return
 
-    vis = TransformVisualizer("robot_urdf_viewer", spawn=True)
+    vis = UrdfVisualizer("robot_urdf_viewer", spawn=True)
 
     print(f"Loading URDF: {args.urdf}")
     urdf_tree = vis.load_urdf(args.urdf)
