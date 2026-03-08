@@ -28,7 +28,7 @@ from rigid_transform_kit.app import (
     log_robot_commands,
     picks_to_tcp_poses_base_and_cam,
 )
-from rigid_transform_kit.viz import TransformVisualizer
+from rigid_transform_kit.viz import TransformVisualizer, save_recording
 from utils import load_ply_points
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "datasets" / "aw_pallet"
@@ -80,6 +80,13 @@ def parse_args():
         DEFAULT_DATA_DIR / "box_pcd5.ply", DEFAULT_DATA_DIR / "box_pcd6.ply"],
         metavar="PLY",
         help="Box PLY file(s) for OBB-based pick; one pick per file",
+    )
+    p.add_argument(
+        "--save_recording",
+        type=Path,
+        default= "/output/recording.rrd",
+        metavar="RRD",
+        help="Save Rerun recording to .rrd file",
     )
     return p.parse_args()
 
@@ -159,6 +166,10 @@ def main():
         tcp_poses=tcp_poses_base or None,
         show_axes=has_axes or None,
     )
+
+    if args.save_recording is not None:
+        save_recording(args.save_recording)
+        log.info("Saved recording to %s", args.save_recording)
 
     log.info("\nRerun viewer - 'Overview (in Base)' / 'Scene (in Camera)' / 'Scene (in Base)' tab.")
 

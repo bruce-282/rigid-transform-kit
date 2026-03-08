@@ -17,7 +17,8 @@ Usage::
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Sequence, Union
 
 import numpy as np
 
@@ -40,6 +41,17 @@ def _require_rerun():
             "rerun-sdk is required for visualization. "
             "Install with: pip install rigid-transform-kit[viz]"
         )
+
+
+def save_recording(path: Union[Path, str]) -> None:
+    """Save the current Rerun recording to an .rrd file.
+
+    Call after logging. Requires rerun-sdk.
+    """
+    _require_rerun()
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    rr.save(str(p))
 
 
 # ============================================================
