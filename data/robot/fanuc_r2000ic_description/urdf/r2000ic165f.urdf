@@ -1,0 +1,183 @@
+<?xml version="1.0" ?>
+<robot name="fanuc_r2000ic165f" xmlns:xacro="http://ros.org/wiki/xacro">
+  <!-- links: main serial chain -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/visual/base_link.stl"/>
+      </geometry>
+      <material name="fanuc_gray40"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/collision/base_link.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link_1">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/visual/link_1.stl"/>
+      </geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/collision/link_1.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link_2">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/visual/link_2.stl"/>
+      </geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/collision/link_2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link_3">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/visual/link_3.stl"/>
+      </geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/collision/link_3.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link_4">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/visual/link_4.stl"/>
+      </geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/collision/link_4.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link_5">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/visual/link_5.stl"/>
+      </geometry>
+      <material name="fanuc_yellow"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/collision/link_5.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <link name="link_6">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/visual/link_6.stl"/>
+      </geometry>
+      <material name="fanuc_black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/collision/link_6.stl"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- joints: main serial chain -->
+  <!-- J1: ±185° -->
+  <joint name="joint_1" type="revolute">
+    <origin xyz="0 0 0.670" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="link_1"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="0" lower="-3.2289" upper="3.2289" velocity="2.2689"/>
+  </joint>
+  <!-- J2: -60° ~ +76° -->
+  <joint name="joint_2" type="revolute">
+    <origin xyz="0.312 0 0" rpy="0 0 0"/>
+    <parent link="link_1"/>
+    <child link="link_2"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="0" lower="-1.0472" upper="1.3265" velocity="2.0071"/>
+  </joint>
+  <!-- J3: -132° ~ +180° -->
+  <joint name="joint_3" type="revolute">
+    <origin xyz="0 0 1.075" rpy="0 0 0"/>
+    <parent link="link_2"/>
+    <child link="link_3"/>
+    <axis xyz="0 -1 0"/>
+    <limit effort="0" lower="-2.3038" upper="3.1416" velocity="2.1817"/>
+  </joint>
+  <!-- J4: ±360° -->
+  <joint name="joint_4" type="revolute">
+    <origin xyz="0 0 0.225" rpy="0 0 0"/>
+    <parent link="link_3"/>
+    <child link="link_4"/>
+    <axis xyz="-1 0 0"/>
+    <limit effort="0" lower="-6.2832" upper="6.2832" velocity="3.1416"/>
+  </joint>
+  <!-- J5: ±125° -->
+  <joint name="joint_5" type="revolute">
+    <origin xyz="1.280 0 0" rpy="0 0 0"/>
+    <parent link="link_4"/>
+    <child link="link_5"/>
+    <axis xyz="0 -1 0"/>
+    <limit effort="0" lower="-2.1817" upper="2.1817" velocity="3.1416"/>
+  </joint>
+  <!-- J6: ±360° -->
+  <joint name="joint_6" type="revolute">
+    <origin xyz="0.215 0 0" rpy="0 0 0"/>
+    <parent link="link_5"/>
+    <child link="link_6"/>
+    <axis xyz="-1 0 0"/>
+    <limit effort="0" lower="-6.2832" upper="6.2832" velocity="4.5379"/>
+  </joint>
+
+  <!-- ROS-Industrial 'base' frame: base_link to Fanuc World Coordinates transform -->
+  <link name="base" />
+  <joint name="base_link-base" type="fixed">
+    <origin xyz="0 0 0.670" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="base"/>
+  </joint>
+
+  <!-- ROS-Industrial 'flange' frame: attachment point for EEF models -->
+  <link name="flange" />
+  <joint name="joint_6-flange" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="link_6" />
+    <child link="flange" />
+  </joint>
+
+  <!-- ROS-Industrial 'tool0' frame: all-zeros tool frame -->
+  <link name="tool0" />
+  <joint name="link_6-tool0" type="fixed">
+    <origin xyz="0 0 0" rpy="3.14159 -1.570795 0" />
+    <parent link="flange" />
+    <child link="tool0" />
+  </joint>
+</robot>

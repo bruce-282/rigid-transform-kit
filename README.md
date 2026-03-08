@@ -108,15 +108,113 @@ src/rigid_transform_kit/
     ├── __init__.py          # TransformVisualizer
     └── visualizer.py        # Rerun visualization (optional)
 
+data/robot/                          # URDF robot descriptions
+├── fanuc_m710ic_description/
+│   ├── urdf/m710ic70.urdf
+│   └── meshes/m710ic50/...          # STL meshes (visual + collision)
+└── fanuc_r2000ic_description/
+    ├── urdf/r2000ic165f.urdf
+    └── meshes/r2000ic165f/...       # STL meshes (visual + collision)
+
 scripts/build/
 ├── build_linux_pip.sh       # Linux pip build
 ├── build_linux_uv.sh        # Linux uv build
 └── build_win_uv.ps1         # Windows uv build
 
 examples/
-├── picking_pipeline.py      # Full pipeline example
-└── visualize_pipeline.py    # Pipeline + Rerun 3D visualization
+├── picking_pipeline.py          # Full pipeline example
+├── visualize_pipeline.py        # Pipeline + Rerun 3D visualization
+└── visualize_robot_urdf.py      # URDF robot + pipeline visualization
 ```
+
+## URDF Robot Models
+
+`data/robot/` 디렉토리에 로봇 URDF description 패키지를 관리한다.
+현재 포함된 모델:
+
+| 패키지 | 로봇 | Payload | Reach |
+|--------|------|---------|-------|
+| `fanuc_m710ic_description` | FANUC M-710iC/70 | 70 kg | 2050 mm |
+| `fanuc_r2000ic_description` | FANUC R-2000iC/165F | 165 kg | 2655 mm |
+
+### 새 로봇 모델 추가하기
+
+#### 1. 디렉토리 구조 만들기
+
+`data/robot/` 아래에 `<vendor>_<model>_description/` 폴더를 만든다.
+반드시 아래 구조를 따라야 `load_urdf()`가 `package://` URI를 올바르게 해석한다.
+
+```
+data/robot/<vendor>_<model>_description/
+├── urdf/
+│   └── <model>.urdf          # 순수 URDF (xacro 아님)
+├── meshes/
+│   └── <variant>/
+│       ├── visual/           # 시각화용 STL
+│       │   ├── base_link.stl
+│       │   ├── link_1.stl
+│       │   └── ...
+│       └── collision/        # 충돌 검사용 STL
+│           ├── base_link.stl
+│           ├── link_1.stl
+│           └── ...
+├── package.xml               # ROS 패키지 메타 (선택)
+├── LICENSE
+└── README.md
+```
+
+#### 2. URDF 작성 규칙
+
+- **순수 URDF만 사용** — xacro 매크로(`${prefix}`, `${radians(...)}` 등)는 전부 풀어서 작성
+- **mesh 경로** — `package://<패키지명>/meshes/...` 형태 사용
+  ```xml
+  <mesh filename="package://fanuc_r2000ic_description/meshes/r2000ic165f/visual/link_1.stl"/>
+  ```
+- **조인트 리밋** — 라디안 단위로 직접 기입 (도 → 라디안: `deg × π / 180`)
+- **표준 프레임** — `base_link`, `link_1`~`link_6`, `flange`, `tool0` 이름 권장
+- **fixed joints** — `base_link-base`, `joint_6-flange`, `link_6-tool0` 포함 권장
+
+#### 3. URDF 소스 구하기
+
+ros-industrial에서 대부분의 산업용 로봇 URDF를 구할 수 있다:
+
+| 벤더 | 레포 |
+|------|------|
+| FANUC | https://github.com/ros-industrial/fanuc |
+| UR | https://github.com/ros-industrial/universal_robot |
+| ABB | https://github.com/ros-industrial/abb |
+| KUKA | https://github.com/ros-industrial/kuka_experimental |
+| Yaskawa | https://github.com/ros-industrial/motoman |
+
+대부분 xacro 형태이므로, `radians()` 등의 매크로를 직접 계산해서 순수 URDF로 변환해야 한다.
+
+#### 4. 시각화 실행
+
+```bash
+# URDF만 보기
+python examples/visualize_robot_urdf.py --urdf data/robot/fanuc_r2000ic_description/urdf/r2000ic165f.urdf
+
+# 조인트 애니메이션 포함
+python examples/visualize_robot_urdf.py --urdf data/robot/fanuc_r2000ic_description/urdf/r2000ic165f.urdf --animate
+```
+
+#### 5. 코드에서 사용
+
+```python
+from rigid_transform_kit.viz import TransformVisualizer
+
+vis = TransformVisualizer("my_robot", spawn=True)
+
+# package:// URI 자동 해석 (urdf 파일의 grandparent = description 폴더의 parent)
+tree = vis.load_urdf("data/robot/fanuc_r2000ic_description/urdf/r2000ic165f.urdf")
+
+# 조인트 각도 설정
+vis.set_joint_angles({"joint_1": 0.5, "joint_2": -0.3, "joint_3": 0.8})
+```
+
+> **`package://` 경로 해석 원리**: `load_urdf()`는 URDF 파일의 2단계 상위 디렉토리를
+> `ROS_PACKAGE_PATH`에 자동 등록한다. 따라서 `urdf/<model>.urdf` 파일이
+> `<pkg_name>/urdf/` 안에 있으면 별도 설정 없이 `package://<pkg_name>/meshes/...`가 해석된다.
 
 ## Extending
 
