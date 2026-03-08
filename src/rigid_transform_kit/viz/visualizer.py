@@ -257,6 +257,7 @@ class TransformVisualizer:
         *,
         parent_path: str = "world",
         axis_length: float = 0.06,
+        arrow_radius: Optional[float] = None,
         label: str = "tcp",
     ) -> None:
         """Log a TCP target pose as a point with 3-axis arrows (XYZ = RGB).
@@ -269,19 +270,22 @@ class TransformVisualizer:
             Rerun entity parent path.
         axis_length : float
             Length of each axis arrow (same unit as T_base2tcp).
+        arrow_radius : float or None
+            Radius of each axis arrow shaft. Defaults to axis_length * 0.04.
         label : str
             Entity name and display label.
         """
         entity = f"{parent_path}/{label}"
         t = T_base2tcp.t
         R = T_base2tcp.R
+        r = arrow_radius if arrow_radius is not None else axis_length * 0.04
 
         rr.log(
             f"{entity}/origin",
             rr.Points3D(
                 [t.tolist()],
                 colors=[[255, 200, 50]],
-                radii=[axis_length * 0.1],
+                radii=[r * 2.5],
                 labels=[label.upper()],
             ),
         )
@@ -295,6 +299,7 @@ class TransformVisualizer:
                     (R[:, 2] * axis_length).tolist(),
                 ],
                 colors=AXIS_COLORS,
+                radii=[r] * 3,
             ),
         )
 
@@ -304,6 +309,7 @@ class TransformVisualizer:
         *,
         parent_path: str = "world/picks",
         axis_length: float = 0.06,
+        arrow_radius: Optional[float] = None,
     ) -> None:
         """Log multiple TCP poses at once."""
         for i, pose in enumerate(poses):
@@ -311,6 +317,7 @@ class TransformVisualizer:
                 pose,
                 parent_path=parent_path,
                 axis_length=axis_length,
+                arrow_radius=arrow_radius,
                 label=f"tcp_{i}",
             )
 

@@ -23,14 +23,13 @@ def load_extrinsics(calibration_yml: Path) -> dict:
     """
     Load hand-eye (camera) calibration from YAML.
 
-    Prefers config.base2cam (T_base2cam) if present and returns T_cam2base (inverse).
-    Otherwise uses config.camera_calibration (T_cam2base).
-    Matrix is returned as stored (typically translation in mm).
+    Always returns T_base2cam (base2cam). Reads config.base2cam or config.camera_calibration;
+    when the file has camera_calibration (T_cam2base), inverts to get base2cam.
 
     Returns
     -------
-    dict with "camera_calibration": np.ndarray (4, 4) T_cam2base;
-    if translation is in mm (max |t| > 10), also "camera_calibration_m": matrix in meters.
+    dict with "base2cam": np.ndarray (4, 4) T_base2cam (as stored, typically mm);
+    if translation is in mm (max |t| > 10), also "base2cam_m": T_base2cam in meters.
     """
     if yaml is None:
         raise ImportError("PyYAML required: pip install pyyaml")
@@ -44,15 +43,15 @@ def load_extrinsics(calibration_yml: Path) -> dict:
     config = data.get("config", data)
     if "base2cam" in config:
         base2cam = np.array(config["base2cam"], dtype=np.float64)
-        mat = np.linalg.inv(base2cam)
     else:
-        mat = np.array(config["camera_calibration"], dtype=np.float64)
+        cam2base = np.array(config["camera_calibration"], dtype=np.float64)
+        base2cam = np.linalg.inv(cam2base)
 
-    out = {"camera_calibration": mat}
-    if np.max(np.abs(mat[:3, 3])) > 10:
-        mat_m = mat.copy()
-        mat_m[:3, 3] *= 0.001
-        out["camera_calibration_m"] = mat_m
+    out = {"base2cam": base2cam}
+    if np.max(np.abs(base2cam[:3, 3])) > 10:
+        base2cam_m = base2cam.copy()
+        base2cam_m[:3, 3] *= 0.001
+        out["base2cam_m"] = base2cam_m
     return out
 
 
@@ -93,13 +92,13 @@ def load_intrinsics(intrinsic_json: Path) -> tuple[np.ndarray, np.ndarray]:
     return K, dist
 
 
-def load_suction_pts(suction_pts_path: Path, cam_config: "CameraConfig") -> list["PickPoint"]:
+def load_suction_pts(suction_pts_path: Path) -> list["PickPoint"]:
     """
     Load suction_pts.json and convert to list of PickPoint.
 
     Format in file: original_suction_pts is list of items like
-      [[[x, y, z], [nx, ny] or [nx, ny, nz] or [nx, ny, angle]]]
-    We assume (x,y,z) is in camera frame in mm; normal is normalized to unit vector.
+      [[[x, y, z], [nx, ny, nz], [lx, ly, lz]]]  (optional long_axis)
+    (x,y,z) in camera frame mm; normal and long_axis normalized to unit vectors.
     """
     from rigid_transform_kit import PickPoint
 
@@ -123,6 +122,21 @@ def load_suction_pts(suction_pts_path: Path, cam_config: "CameraConfig") -> list
     for item in arr:
         if not item:
             continue
+
+        if isinstance(item, dict):
+            p_cam = np.array(item["p_cam"], dtype=np.float64)
+            n_cam = None
+            if "n_cam" in item:
+                n_cam = np.array(item["n_cam"], dtype=np.float64)
+                n_cam = n_cam / (np.linalg.norm(n_cam) + 1e-12)
+            long_axis_cam = None
+            if "long_axis_cam" in item:
+                lax = np.array(item["long_axis_cam"], dtype=np.float64)
+                if np.linalg.norm(lax) > 1e-9:
+                    long_axis_cam = lax / np.linalg.norm(lax)
+            picks.append(PickPoint(p_cam=p_cam, n_cam=n_cam, long_axis_cam=long_axis_cam))
+            continue
+
         if isinstance(item[0], list) and len(item[0]) >= 2:
             group = item[0]
         else:
@@ -146,35 +160,17 @@ def load_suction_pts(suction_pts_path: Path, cam_config: "CameraConfig") -> list
                 else:
                     n_cam = np.array([0.0, 0.0, -1.0])
 
-        picks.append(PickPoint(p_cam=p_cam, n_cam=n_cam))
+        long_axis_cam = None
+        if len(group) >= 3:
+            lax = np.array(group[2], dtype=np.float64)
+            if lax.size >= 3:
+                lax = lax[:3]
+                l_norm = np.linalg.norm(lax)
+                if l_norm > 1e-9:
+                    long_axis_cam = lax / l_norm
+
+        picks.append(PickPoint(p_cam=p_cam, n_cam=n_cam, long_axis_cam=long_axis_cam))
     return picks
-
-
-def save_suction_pts(
-    picks: list["PickPoint"],
-    suction_pts_path: Path | None = None,
-    out_path: Path | None = None,
-) -> None:
-    """
-    Save suction points as JSON: list of {"p_cam": [x,y,z], "n_cam": [nx,ny,nz]}
-    (meters, unit normal).
-    """
-    out_path = out_path or (
-        (suction_pts_path.with_name(suction_pts_path.stem + "_clean.json"))
-        if suction_pts_path else None
-    )
-    if out_path is None:
-        return
-    data = []
-    for p in picks:
-        entry = {"p_cam": p.p_cam.tolist()}
-        if p.n_cam is not None:
-            entry["n_cam"] = p.n_cam.tolist()
-        data.append(entry)
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    print(f"Wrote suction points to {out_path}")
-
 
 def load_ply_points(path: Path) -> tuple[np.ndarray, np.ndarray | None] | None:
     """Load point cloud from PLY; return (points Nx3 in meters, colors Nx3 uint8 or None)."""

@@ -52,18 +52,18 @@ class CameraConfig:
         intrinsics,
         distortion,
         depth_scale: float = 0.001,
-        calib_key: str = "camera_calibration",
-        calib_convention: str = "cam2base",
+        calib_key: str = "base2cam",
+        calib_convention: str = "base2cam",
     ) -> CameraConfig:
-        """Create from calibration.yml style dict.
+        """Create from calibration dict (default: calib["base2cam"] = T_base2cam).
 
         Parameters
         ----------
         calib : dict
             Must contain a 4x4 matrix under `calib_key`.
         calib_convention : str
+            "base2cam" — matrix is T_base2cam (default).
             "cam2base" — matrix is T_cam2base (camera -> base).
-            "base2cam" — matrix is T_base2cam (base -> camera).
         """
         mat = np.array(calib[calib_key], dtype=np.float64)
 

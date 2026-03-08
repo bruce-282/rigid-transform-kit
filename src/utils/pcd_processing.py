@@ -6,7 +6,7 @@ from typing import Tuple, Dict
 def remove_statistical_outlier(
     pcd: o3d.geometry.PointCloud,
     nb_neighbors: int = 20,
-    std_ratio: float = 2.0,
+    std_ratio: float = 3.0,
 ) -> Tuple[o3d.geometry.PointCloud, np.ndarray]:
     """통계적 이상치 제거: 이웃과의 평균 거리가 표준편차 기준으로 먼 점 제거.
 
@@ -55,7 +55,7 @@ def remove_radius_outlier(
 
 def fit_plane(
     pcd: o3d.geometry.PointCloud,
-    distance_threshold: float = 5.0,
+    distance_threshold: float = 4.0,
     ransac_n: int = 3,
     num_iterations: int = 1000,
 ) -> Tuple[np.ndarray, np.ndarray, o3d.geometry.PointCloud]:
@@ -88,39 +88,64 @@ def fit_plane(
 
 def get_box_axes(
     inlier_pcd: o3d.geometry.PointCloud,
+    plane_normal: np.ndarray | None = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]:
-    """OBB로 장축/단축/법선 방향 및 박스 중심 추출.
+    """평면 투영 + 2D PCA로 장축/단축 방향 및 박스 중심 추출.
+
+    3D OBB는 평면 inlier처럼 거의 2D인 점군에서 장축 방향이
+    불안정할 수 있으므로, 평면 법선 방향을 제거한 뒤 2D PCA로
+    장/단축을 구한다.
 
     Parameters
     ----------
     inlier_pcd : 평면 inlier PointCloud (fit_plane 반환값)
+    plane_normal : (3,) 평면 법선. None이면 내부에서 추정한다.
 
     Returns
     -------
-    normal   : (3,) 두께 방향 (extent 최소축, ≈ 평면 법선)
-    long_axis : (3,) 장축 방향
-    center   : (3,) OBB 중심 (카메라 좌표계)
-    info     : dict  extent, short_axis, aspect_ratio, is_square 등
+    normal    : (3,) 평면 법선 (카메라를 향하는 방향)
+    long_axis : (3,) 장축 방향 (3D, 단위벡터)
+    center    : (3,) inlier 중심 (카메라 좌표계)
+    info      : dict  extent_long, extent_short, short_axis, aspect_ratio, is_square
     """
-    obb = inlier_pcd.get_oriented_bounding_box()
-    R_obb = np.asarray(obb.R)
-    extent = np.asarray(obb.extent)
+    pts = np.asarray(inlier_pcd.points)
+    center = pts.mean(axis=0)
 
-    axes_order = np.argsort(extent)  # [두께, 단축, 장축]
+    if plane_normal is None:
+        cov3 = np.cov(pts, rowvar=False)
+        eigvals, eigvecs = np.linalg.eigh(cov3)
+        plane_normal = eigvecs[:, 0]
+    normal = plane_normal / (np.linalg.norm(plane_normal) + 1e-12)
+    if np.dot(normal, -center) < 0:
+        normal = -normal
 
-    normal = R_obb[:, axes_order[0]]
-    short_axis = R_obb[:, axes_order[1]]
-    long_axis = R_obb[:, axes_order[2]]
-    center = np.asarray(obb.center)
+    centered = pts - center
+    proj_along_n = np.outer(centered @ normal, normal)
+    pts_2d = centered - proj_along_n
+
+    cov = np.cov(pts_2d, rowvar=False)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+
+    order = np.argsort(eigvals)[::-1]  # [장축, 단축, (≈0 법선)]
+    long_axis = eigvecs[:, order[0]]
+    short_axis = eigvecs[:, order[1]]
+
+    long_axis = long_axis / (np.linalg.norm(long_axis) + 1e-12)
+    short_axis = short_axis / (np.linalg.norm(short_axis) + 1e-12)
+
+    proj_long = centered @ long_axis
+    proj_short = centered @ short_axis
+    extent_long = proj_long.max() - proj_long.min()
+    extent_short = proj_short.max() - proj_short.min()
 
     info = {
-        "extent": extent,
-        "extent_sorted": extent[axes_order],
+        "extent_long": extent_long,
+        "extent_short": extent_short,
         "normal": normal,
         "short_axis": short_axis,
         "long_axis": long_axis,
-        "aspect_ratio": extent[axes_order[2]] / max(extent[axes_order[1]], 1e-9),
-        "is_square": extent[axes_order[2]] / max(extent[axes_order[1]], 1e-9) < 1.2,
+        "aspect_ratio": extent_long / max(extent_short, 1e-9),
+        "is_square": extent_long / max(extent_short, 1e-9) < 1.2,
     }
 
     return normal, long_axis, center, info

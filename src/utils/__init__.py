@@ -8,7 +8,6 @@ from .dataset_loader import (
     load_extrinsics,
     load_intrinsics,
     load_suction_pts,
-    save_suction_pts,
     load_ply_points,
     load_box_pcd,
 )
