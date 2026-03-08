@@ -92,82 +92,53 @@ def load_intrinsics(intrinsic_json: Path) -> tuple[np.ndarray, np.ndarray]:
     return K, dist
 
 
-def load_suction_pts(suction_pts_path: Path) -> list["PickPoint"]:
+def load_cam_targets(path: Path) -> list["PickPoint"]:
     """
-    Load suction_pts.json and convert to list of PickPoint.
+    Load pick points from JSON.
 
-    Format in file: original_suction_pts is list of items like
-      [[[x, y, z], [nx, ny, nz], [lx, ly, lz]]]  (optional long_axis)
-    (x,y,z) in camera frame mm; normal and long_axis normalized to unit vectors.
+    Expected format (unit: mm, camera frame)::
+
+        {
+          "cam_targets": [
+            {
+              "p_cam": [x, y, z],
+              "n_cam": [nx, ny, nz],
+              "long_axis_cam": [lx, ly, lz]
+            },
+            ...
+          ]
+        }
+
+    * ``p_cam`` (required): position in camera frame, mm.
+    * ``n_cam`` (optional): surface normal (unit vector). Defaults to [0, 0, -1].
+    * ``long_axis_cam`` (optional): long-axis direction (unit vector).
     """
     from rigid_transform_kit import PickPoint
 
-    if not suction_pts_path.exists():
+    if not path.exists():
         return []
 
-    with open(suction_pts_path, encoding="utf-8") as f:
-        raw = f.read().strip()
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
 
-    try:
-        data = json.loads(raw)
-        arr = data.get("original_suction_pts", data.get("suction_pts", []))
-    except json.JSONDecodeError:
-        start = raw.find("[[")
-        end = raw.rfind("]]") + 2
-        if start == -1 or end <= start:
-            return []
-        arr = json.loads(raw[start:end])
+    arr = data.get("cam_targets", [])
 
     picks = []
     for item in arr:
-        if not item:
-            continue
-
-        if isinstance(item, dict):
-            p_cam = np.array(item["p_cam"], dtype=np.float64)
-            n_cam = None
-            if "n_cam" in item:
-                n_cam = np.array(item["n_cam"], dtype=np.float64)
-                n_cam = n_cam / (np.linalg.norm(n_cam) + 1e-12)
-            long_axis_cam = None
-            if "long_axis_cam" in item:
-                lax = np.array(item["long_axis_cam"], dtype=np.float64)
-                if np.linalg.norm(lax) > 1e-9:
-                    long_axis_cam = lax / np.linalg.norm(lax)
-            picks.append(PickPoint(p_cam=p_cam, n_cam=n_cam, long_axis_cam=long_axis_cam))
-            continue
-
-        if isinstance(item[0], list) and len(item[0]) >= 2:
-            group = item[0]
-        else:
-            group = item
-        if not isinstance(group, (list, tuple)) or len(group) < 1:
-            continue
-        pos = np.array(group[0], dtype=np.float64)
-        p_cam = pos[:3] / 1000.0
+        p_cam = np.array(item["p_cam"], dtype=np.float64)
 
         n_cam = None
-        if len(group) >= 2:
-            norm = np.array(group[1], dtype=np.float64)
-            if len(norm) >= 2:
-                if len(norm) >= 3:
-                    n_cam = norm[:3]
-                else:
-                    n_cam = np.array([float(norm[0]), float(norm[1]), 0.0])
-                n_norm = np.linalg.norm(n_cam)
-                if n_norm > 1e-9:
-                    n_cam = n_cam / n_norm
-                else:
-                    n_cam = np.array([0.0, 0.0, -1.0])
+        if "n_cam" in item:
+            nv = np.array(item["n_cam"], dtype=np.float64)
+            n_norm = np.linalg.norm(nv)
+            n_cam = nv / n_norm if n_norm > 1e-9 else np.array([0.0, 0.0, -1.0])
 
         long_axis_cam = None
-        if len(group) >= 3:
-            lax = np.array(group[2], dtype=np.float64)
-            if lax.size >= 3:
-                lax = lax[:3]
-                l_norm = np.linalg.norm(lax)
-                if l_norm > 1e-9:
-                    long_axis_cam = lax / l_norm
+        if "long_axis_cam" in item:
+            lv = np.array(item["long_axis_cam"], dtype=np.float64)
+            l_norm = np.linalg.norm(lv)
+            if l_norm > 1e-9:
+                long_axis_cam = lv / l_norm
 
         picks.append(PickPoint(p_cam=p_cam, n_cam=n_cam, long_axis_cam=long_axis_cam))
     return picks

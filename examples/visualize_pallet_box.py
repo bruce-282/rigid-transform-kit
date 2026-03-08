@@ -32,7 +32,7 @@ from utils import (
     load_box_pcd,
     load_extrinsics,
     load_ply_points,
-    load_suction_pts,
+    load_cam_targets,
     remove_statistical_outlier,
 )
 
@@ -54,14 +54,14 @@ def parse_args():
         type=Path,
         default=DEFAULT_DATA_DIR / "calibration_result.yml",
         metavar="YAML",
-        help="Camera calibration YAML (default: <data-dir>/calibration_result.yml)",
+        help="Camera calibration YAML (default: <data-dir>/calibration_result.yml), the format is like this: {config: {base2cam: [x, y, z, w, x, y, z, w]}}",
     )
     p.add_argument(
-        "--suction-pts",
+        "--cam-targets",
         type=Path,
         default=None,
         metavar="JSON",
-        help="Suction points JSON (optional)",
+        help="Target points JSON (optional), the format is like this: {cam_targets: [{p_cam: [x, y, z], n_cam: [nx, ny, nz], long_axis_cam: [lx, ly, lz]}]}",
     )
     p.add_argument(
         "--pcd",
@@ -93,9 +93,9 @@ def main():
 
     picks: list[PickPoint] = []
 
-    if args.suction_pts is not None:
-        picks = load_suction_pts(args.suction_pts)
-        print(f"Loaded {len(picks)} suction points from {args.suction_pts}.")
+    if args.cam_targets is not None:
+        picks = load_cam_targets(args.cam_targets)
+        print(f"Loaded {len(picks)} cam_targets from {args.cam_targets}.")
     if args.box_pcd:
         for path in args.box_pcd:
             box_pcd = load_box_pcd(path)
@@ -107,7 +107,7 @@ def main():
                     PickPoint(p_cam=center, n_cam=normal_cam, long_axis_cam=long_axis)
                 )
                 print(f"Box {path.name}: center={center}, long={info['extent_long']:.1f}, short={info['extent_short']:.1f}, aspect={info['aspect_ratio']:.2f}")
-        if not picks and args.suction_pts is None:
+        if not picks and args.cam_targets is None:
             print("No picks from box_pcd (files missing or empty).")
 
     vis = TransformVisualizer("pallet_sample1", spawn=True)
