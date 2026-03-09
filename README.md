@@ -58,12 +58,16 @@ cam_config = CameraConfig.from_calibration_dict(
     intrinsics=K, distortion=D,
 )
 
-# 2. AI output → base frame (vision 도메인)
+# 2. AI output → base frame (vision 도메인, 4x4)
 pick = PickPoint(p_cam=ai_result["suction_xyz"], n_cam=ai_result["normal"])
-p_base, n_base = pick.to_base(cam_config)
+T_base2pick = pick.to_base(cam_config)  # RigidTransform(BASE -> OBJECT)
 
 # 3. TCP pose (robot 도메인)
-T_base2tcp = build_tcp_pose(p_base, n_base, contact_offset=0.005)
+T_base2tcp = build_tcp_pose(
+    T_base2pick.t, T_base2pick.R[:, 2],
+    contact_offset=0.005,
+    long_axis_hint=T_base2pick.R[:, 0],
+)
 
 # 4. Robot command (robot 도메인)
 robot = FanucAdapter(tool_z_offset=0.10)

@@ -7,11 +7,11 @@ AI detection result in camera frame.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
-from ..core import Frame, RigidTransform
+from ..core import Frame, RigidTransform, orthogonal_frame
 
 if TYPE_CHECKING:
     from .camera import CameraConfig
@@ -48,18 +48,44 @@ class PickPoint:
         if self.long_axis_cam is not None:
             self.long_axis_cam = np.asarray(self.long_axis_cam, dtype=np.float64)
 
-    # ── coordinate transform ──────────────────────────────────
+    def get_orientation_frame_cam(self) -> np.ndarray:
+        """Right-handed orientation in camera frame from n_cam and long_axis_cam.
 
-    def to_base(self, cam_config: CameraConfig) -> Tuple[np.ndarray, np.ndarray]:
-        """Transform pick point and normal to base frame.
+        Vision convention: Z = n_cam (surface normal, no flip). X from
+        long_axis_cam (projected). Uses :func:`~rigid_transform_kit.core.orthogonal_frame`.
 
         Returns
         -------
-        p_base : np.ndarray (3,)
-        n_base : np.ndarray (3,), unit vector
+        R_cam : (3, 3) rotation matrix  [x | y | z]
         """
-        T_cam2base = cam_config.T_cam2base
+        z = (
+            self.n_cam / np.linalg.norm(self.n_cam)
+            if self.n_cam is not None
+            else np.array([0.0, 0.0, -1.0])
+        )
+        return orthogonal_frame(z_axis=z, hint=self.long_axis_cam)
 
+    # ── coordinate transform ──────────────────────────────────
+
+    def to_base(
+        self,
+        cam_config: CameraConfig,
+    ) -> RigidTransform:
+        """Pick pose in base frame as 4x4 rigid transform.
+
+        Returns
+        -------
+        T_base2pick : RigidTransform (BASE -> OBJECT)
+            Translation = p_base, rotation = orthogonal frame from n_base and
+            long_axis_base (Z = n_base, X from long_axis).
+        """
+        return self._to_base_impl(cam_config.T_cam2base)
+
+    def to_base_transform(self, T_cam2base: RigidTransform) -> RigidTransform:
+        """Pick pose in base frame when you only have T_cam2base (no CameraConfig)."""
+        return self._to_base_impl(T_cam2base)
+
+    def _to_base_impl(self, T_cam2base: RigidTransform) -> RigidTransform:
         p_base = T_cam2base.transform_point(self.p_cam)
 
         if self.n_cam is not None:
@@ -68,5 +94,15 @@ class PickPoint:
         else:
             n_base = np.array([0.0, 0.0, -1.0])
 
-        return p_base, n_base
+        long_axis_base = None
+        if self.long_axis_cam is not None:
+            long_axis_base = T_cam2base.transform_direction(self.long_axis_cam)
+            nrm = np.linalg.norm(long_axis_base)
+            if nrm > 1e-12:
+                long_axis_base = long_axis_base / nrm
+            else:
+                long_axis_base = None
+
+        R_base = orthogonal_frame(z_axis=n_base, hint=long_axis_base)
+        return RigidTransform.from_Rt(R_base, p_base, Frame.BASE, Frame.OBJECT)
 

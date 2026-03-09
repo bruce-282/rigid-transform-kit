@@ -45,25 +45,6 @@ def extract_picks_from_boxes(box_paths: Sequence[Path]) -> list[PickPoint]:
     return picks
 
 
-def _pick_to_base(
-    pick: PickPoint, T_cam2base: RigidTransform,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
-    """Transform a single pick's position, normal, and long-axis hint to base frame."""
-    p_cam_mm = _ensure_mm(pick.p_cam)
-    p_base = T_cam2base.transform_point(p_cam_mm)
-
-    n_cam = pick.n_cam if pick.n_cam is not None else np.array([0.0, 0.0, -1.0])
-    n_base = T_cam2base.transform_direction(n_cam)
-    n_base = n_base / (np.linalg.norm(n_base) + 1e-12)
-
-    long_hint_base = None
-    if pick.long_axis_cam is not None:
-        long_hint_base = T_cam2base.transform_direction(pick.long_axis_cam)
-        long_hint_base = long_hint_base / (np.linalg.norm(long_hint_base) + 1e-12)
-
-    return p_base, n_base, long_hint_base
-
-
 def picks_to_tcp_poses(
     picks: Sequence[PickPoint],
     T_cam2base: RigidTransform,
@@ -71,8 +52,14 @@ def picks_to_tcp_poses(
     """Convert camera-frame PickPoints to base-frame TCP poses."""
     tcp_poses: list[RigidTransform] = []
     for pick in picks:
-        p_base, n_base, long_hint_base = _pick_to_base(pick, T_cam2base)
-        tcp_poses.append(build_tcp_pose(p_base, n_base, long_axis_hint=long_hint_base))
+        T_base2pick = pick.to_base_transform(T_cam2base)
+        tcp_poses.append(
+            build_tcp_pose(
+                T_base2pick.t,
+                T_base2pick.R[:, 2],
+                long_axis_hint=T_base2pick.R[:, 0],
+            )
+        )
     return tcp_poses
 
 
@@ -93,8 +80,14 @@ def picks_to_tcp_poses_base_and_cam(
     has_axes: list[bool] = []
 
     for pick in picks:
-        p_base, n_base, long_hint_base = _pick_to_base(pick, T_cam2base)
-        tcp_poses_base.append(build_tcp_pose(p_base, n_base, long_axis_hint=long_hint_base))
+        T_base2pick = pick.to_base_transform(T_cam2base)
+        tcp_poses_base.append(
+            build_tcp_pose(
+                T_base2pick.t,
+                T_base2pick.R[:, 2],
+                long_axis_hint=T_base2pick.R[:, 0],
+            )
+        )
 
         p_cam_mm = _ensure_mm(pick.p_cam)
         n_cam = pick.n_cam if pick.n_cam is not None else np.array([0.0, 0.0, -1.0])

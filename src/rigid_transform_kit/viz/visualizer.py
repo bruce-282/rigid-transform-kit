@@ -246,7 +246,7 @@ class TransformVisualizer:
         index: int = 0,
         normal_length: float = 0.05,
     ) -> None:
-        """Log a PickPoint as a 3D point + surface normal arrow in base frame.
+        """Log a PickPoint as a 3-axis frame in base frame (from T_base2pick rotation).
 
         Parameters
         ----------
@@ -255,27 +255,14 @@ class TransformVisualizer:
         index : int
             Index for labeling when visualizing multiple picks.
         normal_length : float
-            Length of the normal arrow (meters).
+            Length of the XYZ axis arrows (meters).
         """
-        p_base, n_base = pick.to_base(cam_config)
-
-        rr.log(
-            f"{parent_path}/picks/pt_{index}",
-            rr.Points3D(
-                [p_base.tolist()],
-                colors=[[255, 200, 50]],
-                radii=[0.005],
-                labels=[f"pick_{index} (conf={pick.confidence:.2f})"],
-            ),
-        )
-
-        rr.log(
-            f"{parent_path}/picks/normal_{index}",
-            rr.Arrows3D(
-                origins=[p_base.tolist()],
-                vectors=[(n_base * normal_length).tolist()],
-                colors=[[100, 220, 255]],
-            ),
+        T_base2pick = pick.to_base(cam_config)
+        self.log_transform(
+            f"{parent_path}/picks/pick_{index}",
+            T_base2pick,
+            axis_length=normal_length,
+            label=f"pick_{index} (conf={pick.confidence:.2f})",
         )
 
     def log_pick_points(

@@ -10,49 +10,7 @@ from typing import Optional
 
 import numpy as np
 
-from ..core import Frame, RigidTransform
-
-
-def _orthogonal_frame(
-    approach: np.ndarray,
-    hint: Optional[np.ndarray] = None,
-) -> np.ndarray:
-    """Build a right-handed rotation matrix from an approach vector.
-
-    Parameters
-    ----------
-    approach : (3,) unit vector — becomes the TCP Z-axis.
-    hint : (3,) optional preferred X-axis direction (e.g. object long axis).
-           Projected onto the plane perpendicular to *approach*
-           to guarantee orthogonality.
-           If None, a world-up heuristic is used.
-
-    Returns
-    -------
-    R : (3, 3) rotation matrix  [x | y | z]
-    """
-    z = approach / np.linalg.norm(approach)
-
-    if hint is not None:
-        proj = hint - np.dot(hint, z) * z
-        if np.linalg.norm(proj) > 1e-9:
-            x = proj / np.linalg.norm(proj)
-        else:
-            hint = None
-
-    if hint is None:
-        up = np.array([0.0, 0.0, 1.0])
-        if abs(np.dot(z, up)) > 0.99:
-            up = np.array([1.0, 0.0, 0.0])
-        x = np.cross(up, z)
-        x = x / np.linalg.norm(x)
-
-    y = np.cross(z, x)
-
-    R = np.column_stack([x, y, z])
-    if np.linalg.det(R) < 0:
-        R[:, 0] = -R[:, 0]
-    return R
+from ..core import Frame, RigidTransform, orthogonal_frame
 
 
 def build_tcp_pose(
@@ -80,7 +38,6 @@ def build_tcp_pose(
     -------
     RigidTransform  T(BASE -> TCP)
     """
-    R = _orthogonal_frame(-n_base, hint=long_axis_hint)
+    R = orthogonal_frame(z_axis=-n_base, hint=long_axis_hint)
     t = p_base + n_base * contact_offset
-
     return RigidTransform.from_Rt(R, t, Frame.BASE, Frame.TCP)
