@@ -2,15 +2,6 @@
 
 Frame-aware rigid transforms for industrial vision-robot pipelines.
 
-## Why
-
-산업용 비전-로봇 시스템에서 좌표 변환은 항상 버그의 온상이다:
-- `camera_calibration`이 `T_cam2base`인지 `T_base2cam`인지 헷갈림
-- `np.linalg.inv`를 잘못 적용
-- 변환 체인에서 프레임 순서 실수
-
-`RigidTransform`은 **프레임 라벨을 강제**해서 이런 실수를 런타임에 잡아준다.
-
 ```python
 T_base2cam @ T_flange2tcp  # → ValueError: Frame mismatch!
 T_base2cam @ T_cam2tcp     # → OK: T(BASE→TCP)
