@@ -10,12 +10,12 @@ requires-python = ">=3.9"
 dependencies = [
     "numpy>=1.21",
     "scipy>=1.7",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
 viz = [
     "rerun-sdk>=0.20",
-    "pyyaml>=6.0",
     "plyfile>=0.7.0",
 ]
 dev = [

@@ -95,6 +95,9 @@ class TransformVisualizer:
         Rerun application identifier.
     spawn : bool
         If True, spawn the Rerun viewer on init.
+    port : int or None
+        gRPC port for the viewer (default 9876). If None, uses Rerun default.
+        Use a different port if 9876 is already in use (e.g. os error 10048 on Windows).
     views : list of (name, origin) tuples or None
         Spatial3DView tabs to create in the Rerun blueprint.
         Each tuple is ``("Tab Name", "entity_origin")``.
@@ -105,12 +108,16 @@ class TransformVisualizer:
         self,
         app_id: str = "rigid_transform_kit",
         spawn: bool = True,
+        port: Optional[int] = None,
         views: Optional[list[tuple[str, str]]] = None,
     ):
         _require_rerun()
         rr.init(app_id)
         if spawn:
-            rr.spawn()
+            if port is not None:
+                rr.spawn(port=port)
+            else:
+                rr.spawn()
 
         rr.log("/", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
         rr.log("world", rr.Transform3D(translation=[0, 0, 0]), static=True)
@@ -385,6 +392,22 @@ class TransformVisualizer:
             axis_length=axis_length,
             label="FLANGE",
         )
+
+    def log_flange_poses(
+        self,
+        poses: Sequence[RigidTransform],
+        *,
+        parent_path: str = "world/flanges",
+        axis_length: float = 100.0,
+    ) -> None:
+        """Log multiple flange poses (e.g. from compute_flange_target). Shown in Overview (in Base)."""
+        for i, T_base2flange in enumerate(poses):
+            self.log_transform(
+                f"{parent_path}/flange_{i}",
+                T_base2flange,
+                axis_length=axis_length,
+                label=f"FLANGE_{i}",
+            )
 
     # ---- scene view (generic) ----
 

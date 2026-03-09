@@ -10,15 +10,18 @@ T_base2cam @ T_cam2tcp     # → OK: T(BASE→TCP)
 ## Install
 
 ```bash
-# base (numpy + scipy만)
+# base (numpy, scipy, pyyaml)
 pip install -e .
 
-# with Rerun 3D visualization
+# with Rerun 3D visualization (rerun-sdk, plyfile)
 pip install -e ".[viz]"
 
 # with dev/test tools
 pip install -e ".[dev]"
 ```
+
+- **open3d** — `examples/visualize_pallet_box.py`에서 `--box-pcd`(PLY/박스 PCD)를 쓰려면 별도 설치.  
+  open3d는 Python 3.8~3.12만 지원하므로, 해당 예제용으로는 3.12 이하 권장.
 
 ### Build Scripts
 
@@ -77,6 +80,20 @@ vis = TransformVisualizer("my_pipeline")
 vis.log_picking_pipeline(cam_config, pick, T_base2tcp)
 ```
 
+### Example scripts
+
+```bash
+# 캘리브레이션 + PCD + 피킹 포인트 시각화 (pip install -e ".[viz]" 필요)
+python examples/visualize_pallet_box.py --calibration path/to/calib.yml --pcd scene.ply
+
+# 결과를 파일로 저장 후 뷰어로 열기 (실시간 뷰어 대신, gRPC 종료 오류 회피)
+python examples/visualize_pallet_box.py --calibration path/to/calib.yml --pcd scene.ply --save out.rrd
+rerun out.rrd
+
+# 포트 9876 사용 중일 때 (Windows 10048 등): --port 9877 또는 set RERUN_PORT=9877
+python examples/visualize_pallet_box.py --calibration path/to/calib.yml --pcd scene.ply --port 9877
+```
+
 ## File Structure
 
 ```
@@ -95,17 +112,26 @@ src/rigid_transform_kit/
 │   ├── base.py              # BaseRobotAdapter (ABC)
 │   ├── fanuc.py             # FanucAdapter (reference impl)
 │   └── tcp.py               # build_tcp_pose
+├── app/
+│   ├── __init__.py          # load_calibration, extract_picks_from_boxes, ...
+│   ├── io.py                # calibration I/O
+│   └── pallet.py            # pallet/box picking helpers
 └── viz/
     ├── __init__.py          # TransformVisualizer
-    └── visualizer.py        # Rerun visualization (optional)
+    ├── visualizer.py        # Rerun visualization (optional)
+    └── urdf_viewer.py       # URDF loading for Rerun
 
-data/robot/                          # URDF robot descriptions
+src/utils/                    # shared utilities (calibration, PCD, datasets)
+├── dataset_loader.py        # load_extrinsics (YAML), load_ply_points, ...
+└── pcd_processing.py        # open3d-based outlier removal, downsampling (optional)
+
+data/robot/                   # URDF robot descriptions
 ├── fanuc_m710ic_description/
 │   ├── urdf/m710ic70.urdf
-│   └── meshes/m710ic50/...          # STL meshes (visual + collision)
+│   └── meshes/m710ic50/...  # STL meshes (visual + collision)
 └── fanuc_r2000ic_description/
     ├── urdf/r2000ic165f.urdf
-    └── meshes/r2000ic165f/...       # STL meshes (visual + collision)
+    └── meshes/r2000ic165f/... # STL meshes (visual + collision)
 
 scripts/build/
 ├── build_linux_pip.sh       # Linux pip build
@@ -113,12 +139,12 @@ scripts/build/
 └── build_win_uv.ps1         # Windows uv build
 
 examples/
-├── picking_pipeline.py          # Full pipeline example
-├── visualize_pipeline.py        # Pipeline + Rerun 3D visualization
-└── visualize_robot_urdf.py      # URDF robot + pipeline visualization
+├── visualize_pallet_box.py      # Calibration + PCD + pick points in Rerun ([viz], optional open3d)
+├── visualize_robot_urdf.py    # URDF robot + pipeline visualization
+└── pallet_box_fanuc_tcp.py    # Pallet/box → Fanuc TCP example
 ```
 
-## URDF Robot Models
+## URDF Robot Models (optional)
 
 `data/robot/` 디렉토리에 로봇 URDF description 패키지를 관리한다.
 현재 포함된 모델:
