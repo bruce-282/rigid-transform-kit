@@ -8,7 +8,7 @@ from typing import Sequence
 
 import numpy as np
 
-from rigid_transform_kit import PickPoint, RigidTransform, build_tcp_pose
+from rigid_transform_kit import Frame, PickPoint, RigidTransform, build_tcp_pose
 
 log = logging.getLogger(__name__)
 
@@ -53,13 +53,7 @@ def picks_to_tcp_poses(
     tcp_poses: list[RigidTransform] = []
     for pick in picks:
         T_base2pick = pick.to_base_transform(T_cam2base)
-        tcp_poses.append(
-            build_tcp_pose(
-                T_base2pick.t,
-                T_base2pick.R[:, 2],
-                long_axis_hint=T_base2pick.R[:, 0],
-            )
-        )
+        tcp_poses.append(build_tcp_pose(T_base2pick))
     return tcp_poses
 
 
@@ -81,18 +75,12 @@ def picks_to_tcp_poses_base_and_cam(
 
     for pick in picks:
         T_base2pick = pick.to_base_transform(T_cam2base)
-        tcp_poses_base.append(
-            build_tcp_pose(
-                T_base2pick.t,
-                T_base2pick.R[:, 2],
-                long_axis_hint=T_base2pick.R[:, 0],
-            )
-        )
+        tcp_poses_base.append(build_tcp_pose(T_base2pick))
 
         p_cam_mm = _ensure_mm(pick.p_cam)
-        n_cam = pick.n_cam if pick.n_cam is not None else np.array([0.0, 0.0, -1.0])
-        long_hint_cam = pick.long_axis_cam
-        tcp_poses_cam.append(build_tcp_pose(p_cam_mm, n_cam, long_axis_hint=long_hint_cam))
+        R_cam = pick.get_orientation_frame_cam()
+        T_cam2pick = RigidTransform.from_Rt(R_cam, p_cam_mm, Frame.CAMERA, Frame.OBJECT)
+        tcp_poses_cam.append(build_tcp_pose(T_cam2pick))
 
         has_axes.append(pick.n_cam is not None)
 

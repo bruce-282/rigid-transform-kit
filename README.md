@@ -62,15 +62,11 @@ cam_config = CameraConfig.from_calibration_dict(
 pick = PickPoint(p_cam=ai_result["suction_xyz"], n_cam=ai_result["normal"])
 T_base2pick = pick.to_base(cam_config)  # RigidTransform(BASE -> OBJECT)
 
-# 3. TCP pose (robot 도메인)
-T_base2tcp = build_tcp_pose(
-    T_base2pick.t, T_base2pick.R[:, 2],
-    contact_offset=0.005,
-    long_axis_hint=T_base2pick.R[:, 0],
-)
+# 3. TCP pose (robot 도메인, 4x4 pick pose에 TCP 규약 적용)
+T_base2tcp = build_tcp_pose(T_base2pick)
 
-# 4. Robot command (robot 도메인)
-robot = FanucAdapter(tool_z_offset=0.10)
+# 4. Robot command (robot 도메인, 오프셋은 툴 길이만)
+robot = FanucAdapter(tool_z_offset=0.10)  # mm, 플랜지→TCP
 cmd = robot.plan_pick(T_base2tcp)
 # {"X": ..., "Y": ..., "Z": ..., "W": ..., "P": ..., "R": ...}
 ```

@@ -1,43 +1,35 @@
 """
 rigid_transform_kit.robot.tcp
 ===============================
-TCP pose builder from position + surface normal.
+TCP pose builder from pick pose (4x4 RigidTransform).
 """
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 
-from ..core import Frame, RigidTransform, orthogonal_frame
+from ..core import Frame, RigidTransform, is_orthogonal_frame
 
 
-def build_tcp_pose(
-    p_base: np.ndarray,
-    n_base: np.ndarray,
-    contact_offset: float = 0.0,
-    long_axis_hint: Optional[np.ndarray] = None,
-) -> RigidTransform:
-    """Build T_base2tcp from position and surface normal.
+def build_tcp_pose(T_pick: RigidTransform) -> RigidTransform:
+    """Build T_*2tcp from pick pose (4x4). Same frame as input (e.g. BASE or CAMERA).
 
-    Convention:
-        TCP Z-axis = -normal (approach direction, pointing into surface)
-        TCP X-axis = long_axis_hint (if given), else world-up heuristic
-        contact_offset > 0  ->  TCP is lifted away from surface along normal
+    *T_pick* is the pick pose (Z = surface normal). TCP는 approach 방향이 Z이므로
+    R만 Z축 반전(및 오른손 유지 위해 Y 반전): R_tcp = R_pick @ diag(1, -1, -1).
+    Origin = pick 위치.
 
     Parameters
     ----------
-    p_base : target position in base frame (3,)
-    n_base : surface normal in base frame (3,), unit vector
-    contact_offset : standoff distance along normal
-    long_axis_hint : (3,) optional object long-axis direction in base frame.
-                     Used to fully determine TCP orientation for rectangular picks.
+    T_pick : RigidTransform (4x4)
+        Pick pose (e.g. PickPoint.to_base() or from_Rt(R_cam, p_cam, CAMERA, OBJECT)).
 
     Returns
     -------
-    RigidTransform  T(BASE -> TCP)
+    RigidTransform  T(from_frame -> TCP)
     """
-    R = orthogonal_frame(z_axis=-n_base, hint=long_axis_hint)
-    t = p_base + n_base * contact_offset
-    return RigidTransform.from_Rt(R, t, Frame.BASE, Frame.TCP)
+    R = T_pick.R
+    if not is_orthogonal_frame(R):
+        raise ValueError("T_pick rotation must be a valid 3x3 orthonormal (right-handed)")
+    # approach 방향으로 Z축 반전 (Y도 반전해 오른손 좌표계 유지)
+    R_tcp = R @ np.diag([1.0, -1.0, -1.0])
+    return RigidTransform.from_Rt(R_tcp, T_pick.t, T_pick.from_frame, Frame.TCP)

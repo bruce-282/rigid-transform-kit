@@ -2,6 +2,7 @@
 rigid_transform_kit.core.geometry
 ==================================
 Orthogonal frame: build rotation matrix from Z-axis direction (and optional X-hint).
+Orthogonality check for 3x3 rotation matrices.
 """
 
 from __future__ import annotations
@@ -9,6 +10,38 @@ from __future__ import annotations
 from typing import Optional
 
 import numpy as np
+
+
+def is_orthogonal_frame(
+    R: np.ndarray,
+    *,
+    atol: float = 1e-6,
+) -> bool:
+    """Check that a 3x3 matrix is a valid right-handed orthonormal rotation.
+
+    Checks: R.T @ R ≈ I (columns unit and mutually orthogonal), det(R) ≈ 1.
+
+    Parameters
+    ----------
+    R : (3, 3) array
+        Candidate rotation matrix.
+    atol : float
+        Absolute tolerance for floating-point comparison.
+
+    Returns
+    -------
+    bool
+        True if R is (3,3), orthonormal, and right-handed (det=1).
+    """
+    R = np.asarray(R, dtype=np.float64)
+    if R.shape != (3, 3):
+        return False
+    I = np.eye(3)
+    if not np.allclose(R.T @ R, I, atol=atol):
+        return False
+    if not np.isclose(np.linalg.det(R), 1.0, atol=atol):
+        return False
+    return True
 
 
 def orthogonal_frame(
