@@ -107,11 +107,8 @@ class RigidTransform:
 
     def to_xyzwpr(self, degrees: bool = True) -> dict[str, float]:
         """Return ``{X, Y, Z, W, P, R}`` dict.
-
-        WPR = intrinsic Z-Y-X Euler angles (scipy ``'ZYX'``).
-        Position unit is whatever the transform already uses (typically mm).
         """
-        wpr = Rotation.from_matrix(self.R).as_euler("ZYX", degrees=degrees)
+        wpr = Rotation.from_matrix(self.R).as_euler("xyz", degrees=degrees)
         return {
             "X": float(self.t[0]),
             "Y": float(self.t[1]),

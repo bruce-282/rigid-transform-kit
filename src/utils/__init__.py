@@ -4,6 +4,11 @@ from .pcd_processing import (
     remove_statistical_outlier,
     remove_radius_outlier,
 )
+from .checkerboard import (
+    detect_corners,
+    detect_checkerboard_pose,
+    get_pose_from_corners,
+)
 from .dataset_loader import (
     load_extrinsics,
     load_intrinsics,

@@ -17,6 +17,7 @@ dependencies = [
 viz = [
     "rerun-sdk>=0.20",
     "plyfile>=0.7.0",
+    "opencv-python>=4.5",
 ]
 dev = [
     "pytest>=7.0",
