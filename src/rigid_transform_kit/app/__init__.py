@@ -11,7 +11,12 @@ from .io import (
     log_tcp_flange_detail,
     save_tcp_poses,
 )
-from .pallet import extract_picks_from_boxes, picks_to_tcp_poses, picks_to_tcp_poses_base_and_cam
+from .pallet import (
+    extract_picks_from_boxes,
+    picks_to_tcp_poses,
+    picks_to_tcp_poses_base_and_cam,
+    pose_to_tcp_poses_base_and_cam,
+)
 
 __all__ = [
     "build_tcp_result",
@@ -26,4 +31,5 @@ __all__ = [
     "extract_picks_from_boxes",
     "picks_to_tcp_poses",
     "picks_to_tcp_poses_base_and_cam",
+    "pose_to_tcp_poses_base_and_cam",
 ]

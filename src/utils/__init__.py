@@ -6,6 +6,7 @@ from .pcd_processing import (
 )
 from .checkerboard import (
     build_object_points,
+    checkerboard_to_pick_point,
     detect_corners,
     detect_checkerboard_pose,
     find_3d_points_from_2d,

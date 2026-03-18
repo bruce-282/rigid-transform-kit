@@ -121,7 +121,15 @@ def main():
         log.warning("No pick points found.")
 
     # rr.spawn() and rr.save() conflict — use spawn=False when saving to file
-    spawn = args.save is None
+    # Large PCD (>500k) → auto-save to avoid gRPC transport errors on shutdown
+    save_path = args.save
+    ply_data = load_ply_points(args.pcd)
+    if save_path is None and ply_data is not None:
+        n_preview = len(ply_data[0])
+        if n_preview > 500_000:
+            save_path = args.data_dir / "box_palletizing.rrd"
+            log.info("Large PCD (%d pts). Auto-saving to %s to avoid gRPC errors.", n_preview, save_path)
+    spawn = save_path is None
     if not spawn:
         log.info("Saving to file (spawn disabled); viewer will open after save.")
     port = args.port
@@ -155,7 +163,6 @@ def main():
     pts_cam_mm = None
     pts_base = None
     colors_cam = None
-    ply_data = load_ply_points(args.pcd)
     if ply_data is not None:
         pts_cam_m, colors_cam = ply_data
         pts_cam_mm = pts_cam_m * 1000.0  # load_ply_points returns meters
@@ -200,13 +207,13 @@ def main():
         show_axes=has_axes or None,
     )
 
-    if args.save is not None:
-        save_recording(args.save)
-        log.info("Saved to %s", args.save)
+    if save_path is not None:
+        save_recording(save_path)
+        log.info("Saved to %s", save_path)
         try:
-            subprocess.run(["rerun", str(args.save)], check=False)
+            subprocess.run(["rerun", str(save_path)], check=False)
         except FileNotFoundError:
-            log.info("Run: rerun %s", args.save)
+            log.info("Run: rerun %s", save_path)
 
     if spawn:
         log.info("\nRerun viewer - 'Overview (in Base)' / 'Scene (in Camera)' / 'Scene (in Base)' tab.")

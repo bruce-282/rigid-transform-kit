@@ -16,7 +16,8 @@ python examples/visualize_pick_checkerBoard.py ^
   --pattern-size 7 6 ^
   --square-size 30 ^
   --save "datasets/pasto_picking/checkerboard_pose.rrd" ^
-  --port 9877 ^
+  --output "datasets/pasto_picking/tcp_poses.json" ^
+  --tool-z-offset 200 ^
   %*
 
 echo.

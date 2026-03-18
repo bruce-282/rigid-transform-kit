@@ -85,6 +85,8 @@ DEFAULT_VIEWS: list[tuple[str, str]] = [
     ("Scene (in Base)", "scene_base"),
 ]
 
+PROJ_2D_VIEW = "proj_2d"
+
 
 class TransformVisualizer:
     """Rerun-based 3D visualizer for rigid transform pipelines.
@@ -126,13 +128,20 @@ class TransformVisualizer:
 
     @staticmethod
     def _build_blueprint(views: list[tuple[str, str]]) -> None:
-        """Create and send a tabbed Spatial3DView blueprint."""
+        """Create and send a tabbed blueprint (3D views + Projection 2D)."""
         import rerun.blueprint as rrb
 
         tabs = [
             rrb.Spatial3DView(name=name, origin=origin, contents=[f"+ {origin}/**"])
             for name, origin in views
         ]
+        tabs.append(
+            rrb.Spatial2DView(
+                name="Projection 2D",
+                origin=PROJ_2D_VIEW,
+                contents=[f"+ {PROJ_2D_VIEW}/**"],
+            )
+        )
         rr.send_blueprint(rrb.Blueprint(rrb.Tabs(*tabs)))
 
     # ---- transform logging ----
@@ -542,6 +551,80 @@ class TransformVisualizer:
         if radii is not None:
             kwargs["radii"] = [radii]
         rr.log(entity_path, rr.Points3D(points, **kwargs))
+
+    def log_projection_2d(
+        self,
+        K: np.ndarray,
+        *,
+        pts_cam: Optional[np.ndarray] = None,
+        colors: Optional[np.ndarray] = None,
+        transforms: Optional[Sequence[RigidTransform]] = None,
+        axis_length_mm: float = 50.0,
+        point_radii: float = 1.0,
+        arrow_radii: float = 0.8,
+        base_path: Optional[str] = None,
+    ) -> None:
+        """Project point cloud and coordinate frames to 2D and log for Rerun 'Projection 2D' view.
+
+        *pts_cam* in camera frame (mm), optional. *K* is (3,3). *transforms* in camera frame (e.g. T_cam2board).
+        *arrow_radii*: 2D arrow shaft thickness in pixels (default 0.8).
+        """
+        base_path = base_path or PROJ_2D_VIEW
+        K = np.asarray(K, dtype=np.float64)
+        fx, fy = float(K[0, 0]), float(K[1, 1])
+        cx, cy = float(K[0, 2]), float(K[1, 2])
+
+        if pts_cam is not None:
+            P = np.asarray(pts_cam, dtype=np.float64)
+            valid = P[:, 2] > 0
+        else:
+            valid = np.array([], dtype=bool)
+        if pts_cam is not None and np.any(valid):
+            Pv = P[valid]
+            u = fx * (Pv[:, 0] / Pv[:, 2]) + cx
+            v = fy * (Pv[:, 1] / Pv[:, 2]) + cy
+            uv = np.column_stack((u, v))
+            kwargs = {"radii": [point_radii]}
+            if colors is not None:
+                kwargs["colors"] = colors[valid]
+            rr.log(
+                f"{base_path}/pcd",
+                rr.Points2D(uv, draw_order=0.0, **kwargs),
+                static=True,
+            )
+
+        if transforms:
+            for i, T in enumerate(transforms):
+                t = np.asarray(T.t, dtype=np.float64)
+                R = np.asarray(T.R, dtype=np.float64)
+                if t[2] <= 0:
+                    continue
+                u0 = fx * (t[0] / t[2]) + cx
+                v0 = fy * (t[1] / t[2]) + cy
+                axes_3d = R * axis_length_mm
+                origins_2d = []
+                vectors_2d = []
+                for j in range(3):
+                    end = t + axes_3d[:, j]
+                    if end[2] <= 0:
+                        continue
+                    u1 = fx * (end[0] / end[2]) + cx
+                    v1 = fy * (end[1] / end[2]) + cy
+                    origins_2d.append([u0, v0])
+                    vectors_2d.append([u1 - u0, v1 - v0])
+                if origins_2d:
+                    rr.log(
+                        f"{base_path}/frame_{i}",
+                        rr.Arrows2D(
+                            origins=origins_2d,
+                            vectors=vectors_2d,
+                            colors=AXIS_COLORS[: len(origins_2d)],
+                            labels=["X", "Y", "Z"][: len(origins_2d)],
+                            radii=arrow_radii,
+                            draw_order=50.0,
+                        ),
+                        static=True,
+                    )
 
     # ---- full pipeline visualization ----
 

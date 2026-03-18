@@ -85,3 +85,23 @@ def picks_to_tcp_poses_base_and_cam(
         has_axes.append(pick.n_cam is not None)
 
     return tcp_poses_base, tcp_poses_cam, has_axes
+
+
+def pose_to_tcp_poses_base_and_cam(
+    T_cam2target: RigidTransform,
+    T_cam2base: RigidTransform | None,
+) -> tuple[list[RigidTransform], list[RigidTransform], list[bool]]:
+    """Single pose version of picks_to_tcp_poses_base_and_cam.
+
+    Use for checkerboard or other single-pose sources. Returns same structure:
+    (tcp_poses_base, tcp_poses_cam, has_axes). Applies build_tcp_pose for base
+    (robot commands need Frame.TCP); cam poses stay raw for visualization.
+    """
+    tcp_poses_cam: list[RigidTransform] = [T_cam2target]
+    tcp_poses_base: list[RigidTransform] = []
+    if T_cam2base is not None:
+        # T_base2target = T_base2cam @ T_cam2target (T_base2cam = cam2base.inv, frame chain: BASE←CAMERA←MARKER)
+        T_base2target = T_cam2base.inv @ T_cam2target
+        tcp_poses_base = [build_tcp_pose(T_base2target)]
+    has_axes: list[bool] = [True]
+    return tcp_poses_base, tcp_poses_cam, has_axes

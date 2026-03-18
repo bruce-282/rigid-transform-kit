@@ -17,7 +17,7 @@ try:
 except ImportError:
     cv2 = None  # type: ignore[assignment]
 
-from rigid_transform_kit import Frame, RigidTransform
+from rigid_transform_kit import Frame, PickPoint, RigidTransform
 
 
 def _require_cv2() -> None:
@@ -531,3 +531,20 @@ def detect_checkerboard_pose(
 
     T = get_pose_from_corners(corners, pattern_size, square_size_mm, K, dist, origin=origin)
     return T, corners
+
+
+def checkerboard_to_pick_point(T_cam2board: RigidTransform) -> PickPoint:
+    """Convert T_cam2board to PickPoint for use with picks_to_tcp_poses_base_and_cam.
+
+    Extracts p_cam (origin), n_cam (Z = surface normal), long_axis_cam (X).
+    """
+    p_cam = np.asarray(T_cam2board.t, dtype=np.float64)
+    n_cam = np.asarray(-T_cam2board.R[:, 2], dtype=np.float64)  # 180도: 보드 Z → 접근 방향
+    nrm = np.linalg.norm(n_cam)
+    if nrm > 1e-12:
+        n_cam = n_cam / nrm
+    long_axis_cam = np.asarray(T_cam2board.R[:, 0], dtype=np.float64)
+    nrm = np.linalg.norm(long_axis_cam)
+    if nrm > 1e-12:
+        long_axis_cam = long_axis_cam / nrm
+    return PickPoint(p_cam=p_cam, n_cam=n_cam, long_axis_cam=long_axis_cam)
