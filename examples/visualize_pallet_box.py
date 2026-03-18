@@ -161,7 +161,7 @@ def main():
         pts_cam_mm = pts_cam_m * 1000.0  # load_ply_points returns meters
 
         pts_base = T_cam2base.transform_points(pts_cam_mm)
-        vis.log_points("world/pcd", pts_base, colors=colors_cam, radii=3.0)
+        vis.log_points("world/pcd", pts_base, colors=colors_cam, radii=1.2)
         n_pts = len(pts_base)
         log.info("Logged %d points from PLY (colors=%s).", n_pts, "yes" if colors_cam is not None else "no")
         if n_pts > 500_000 and spawn:

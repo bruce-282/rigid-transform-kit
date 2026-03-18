@@ -34,7 +34,7 @@ except ImportError:
     cv2 = None
 
 from utils import load_ply_points
-from utils.checkerboard import detect_checkerboard_pose
+from utils.checkerboard import detect_checkerboard_pose, undistort_point_cloud
 
 logging.basicConfig(
     level=logging.INFO,
@@ -97,6 +97,13 @@ def parse_args():
         help="Square size in mm. Default 25",
     )
     p.add_argument(
+        "--origin",
+        type=str,
+        default="center",
+        choices=["center", "LT", "RB"],
+        help="Board origin: center (default), LT (left-top), RB (right-bottom)",
+    )
+    p.add_argument(
         "--calibration",
         type=Path,
         default=None,
@@ -147,7 +154,11 @@ def main():
     K, dist = load_intrinsics_for_checkerboard(args.intrinsics)
     pattern_size = tuple(args.pattern_size)
 
-    # Detect checkerboard pose (RGB-only util)
+    # Optional: load PLY once (for RGB-depth pose and visualization)
+    ply_data = load_ply_points(args.pcd) if (args.pcd and args.pcd.exists()) else None
+    points_cam_m, colors_cam = (ply_data if ply_data else (None, None))
+
+    # Detect checkerboard pose (RGB-only or RGB+depth when points_cam_m given)
     T_cam2board, corners = detect_checkerboard_pose(
         img_rgb,
         pattern_size,
@@ -155,6 +166,8 @@ def main():
         K,
         dist,
         refine_corners=True,
+        origin=args.origin,
+        points_cam_m=points_cam_m,
     )
     if T_cam2board is None:
         log.error(
@@ -166,6 +179,10 @@ def main():
         return
 
     log.info("Checkerboard detected. T_cam2board t = [%.1f, %.1f, %.1f] mm", *T_cam2board.t)
+
+    pts_cam_mm = None
+    pts_base = None
+    # colors_cam already set from ply_data above; do not overwrite
 
     # Optional base frame
     T_base2cam = None
@@ -223,29 +240,52 @@ def main():
             label="BOARD",
         )
 
-    # ── Optional PLY (camera frame; base frame if calibration given) ──
-    if args.pcd is not None and args.pcd.exists():
-        ply_data = load_ply_points(args.pcd)
-        if ply_data is not None:
-            pts_cam_m, colors_cam = ply_data
-            pts_cam_mm = pts_cam_m * 1000.0
-            if T_base2cam is not None:
-                T_cam2base = T_base2cam.inv
-                pts_world = T_cam2base.transform_points(pts_cam_mm)
-            else:
-                pts_world = pts_cam_mm
-            vis.log_points("world/pcd", pts_world, colors=colors_cam, radii=3.0)
-            n_pts = len(pts_world)
-            log.info("Logged %d points from PLY.", n_pts)
-            if n_pts > 500_000 and spawn:
-                log.warning(
-                    "Large point cloud (%d). Use --save out.rrd then: rerun out.rrd to avoid gRPC errors.",
-                    n_pts,
-                )
+    # ── Optional PLY (use undistorted for vis so it matches pose) ──
+    if points_cam_m is not None:
+        dist_arr = (
+            np.asarray(dist, dtype=np.float64).ravel()[:5]
+            if dist is not None
+            else np.zeros(5, dtype=np.float64)
+        )
+        if np.any(np.abs(dist_arr) > 1e-10):
+            pts_vis = undistort_point_cloud(points_cam_m, K, dist)
+            valid = ~np.any(np.isnan(pts_vis), axis=1)
+            pts_cam_m_vis = pts_vis[valid]
+            colors_vis = colors_cam[valid] if colors_cam is not None else None
         else:
-            log.warning("Could not load PLY: %s", args.pcd)
+            pts_cam_m_vis = points_cam_m
+            colors_vis = colors_cam
+        pts_cam_mm = pts_cam_m_vis * 1000.0
+        if T_base2cam is not None:
+            T_cam2base = T_base2cam.inv
+            pts_base = T_cam2base.transform_points(pts_cam_mm)
+        else:
+            pts_base = None
+        pts_world = pts_base if pts_base is not None else pts_cam_mm
+        vis.log_points("world/pcd", pts_world, colors=colors_vis, radii=1.2)
+        n_pts = len(pts_world)
+        log.info("Logged %d points from PLY (colors=%s).", n_pts, "yes" if colors_cam is not None else "no")
+        if n_pts > 500_000 and spawn:
+            log.warning(
+                "Large point cloud (%d). Use --save out.rrd then: rerun out.rrd to avoid gRPC errors.",
+                n_pts,
+            )
     elif args.pcd is not None:
-        log.warning("PLY file not found: %s", args.pcd)
+        log.warning("PLY not loaded or not found: %s", args.pcd)
+
+    vis.log_scene_in_camera(
+        pts_cam=pts_cam_mm,
+        colors=colors_cam,
+        tcp_poses=[T_cam2board],
+        show_axes=[True],
+    )
+
+    vis.log_scene_base(
+        pts_base=pts_base,
+        colors=colors_cam,
+        tcp_poses=[T_base2board] if T_base2cam is not None else None,
+        show_axes=[True] if T_base2cam is not None else None,
+    )
 
     if args.save is not None:
         save_recording(args.save)
@@ -256,7 +296,7 @@ def main():
             pass
 
     if spawn:
-        log.info("Rerun viewer: world/camera, world/checkerboard.")
+        log.info("Rerun viewer - 'Overview (in Base)' / 'Scene (in Camera)' / 'Scene (in Base)' tab.")
         import rerun as rr
         rec = rr.get_global_data_recording()
         if rec is not None:

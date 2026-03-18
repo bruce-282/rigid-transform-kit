@@ -406,7 +406,7 @@ class TransformVisualizer:
         tcp_poses: Optional[Sequence[RigidTransform]] = None,
         show_axes: Optional[Sequence[bool]] = None,
         *,
-        radii: float = 3.0,
+        radii: float = 1.2,
         axis_length: float = 100.0,
         show_origin: bool = False,
         origin_axis_length: float = 300.0,
@@ -500,7 +500,7 @@ class TransformVisualizer:
         tcp_poses: Optional[Sequence[RigidTransform]] = None,
         show_axes: Optional[Sequence[bool]] = None,
         *,
-        radii: float = 3.0,
+        radii: float = 1.2,
         axis_length: float = 100.0,
     ) -> None:
         """Scene view in camera frame (no origin axes)."""
@@ -516,7 +516,7 @@ class TransformVisualizer:
         tcp_poses: Optional[Sequence[RigidTransform]] = None,
         show_axes: Optional[Sequence[bool]] = None,
         *,
-        radii: float = 4.0,
+        radii: float = 1.2,
         axis_length: float = 100.0,
     ) -> None:
         """Scene view in base frame (with origin axes)."""
@@ -533,9 +533,9 @@ class TransformVisualizer:
         points: np.ndarray,
         *,
         colors: Optional[np.ndarray] = None,
-        radii: Optional[float] = None,
+        radii: Optional[float] = 1.2,
     ) -> None:
-        """Log a raw point cloud."""
+        """Log a raw point cloud. Default radii=1.2 (mm) for finer dots."""
         kwargs = {}
         if colors is not None:
             kwargs["colors"] = colors

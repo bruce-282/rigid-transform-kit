@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
+export RERUN_PORT=9877
+
 python examples/visualize_pick_checkerBoard.py \
   --image "datasets/pasto_picking/rgb.png" \
   --intrinsics "datasets/pasto_picking/intrinsics.json" \
@@ -14,4 +16,5 @@ python examples/visualize_pick_checkerBoard.py \
   --pattern-size 7 6 \
   --square-size 30 \
   --save "datasets/pasto_picking/checkerboard_pose.rrd" \
+  --port 9877 \
   "$@"
