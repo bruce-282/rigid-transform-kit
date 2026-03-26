@@ -425,6 +425,7 @@ class TransformVisualizer:
         axis_length: float = 100.0,
         show_origin: bool = False,
         origin_axis_length: float = 300.0,
+        show_y_both: bool = False,
     ) -> None:
         """Log a scene view under *prefix* (PCD + pick orientations).
 
@@ -492,8 +493,22 @@ class TransformVisualizer:
                 )
                 if draw:
                     z_vec = cam_dir * axis_length
-                    y_vec = -R[:, 1] * axis_length
                     x_vec = R[:, 0] * axis_length
+                    y_vec = -R[:, 1] * axis_length
+                    if show_y_both:
+                        y_pos_vec = R[:, 1] * axis_length
+                        rr.log(
+                            f"{prefix}/pick_{i}/axes",
+                            rr.Arrows3D(
+                                origins=[t_lifted.tolist()] * 4,
+                                vectors=[x_vec.tolist(), y_pos_vec.tolist(), y_vec.tolist(), z_vec.tolist()],
+                                colors=[AXIS_COLORS[0], [80, 220, 80], AXIS_COLORS[1], AXIS_COLORS[2]],
+                                radii=[radii] * 4,
+                                labels=["X", "Y+", "Y-", "Z (->cam)"],
+                            ),
+                            static=True,
+                        )
+                        continue
                     rr.log(
                         f"{prefix}/pick_{i}/axes",
                         rr.Arrows3D(
@@ -517,11 +532,12 @@ class TransformVisualizer:
         *,
         radii: float = 1.2,
         axis_length: float = 100.0,
+        show_y_both: bool = False,
     ) -> None:
         """Scene view in camera frame (no origin axes)."""
         self._log_scene_view(
             "cam_view", pts_cam, colors, tcp_poses, show_axes,
-            radii=radii, axis_length=axis_length, show_origin=False,
+            radii=radii, axis_length=axis_length, show_origin=False, show_y_both=show_y_both,
         )
 
     def log_scene_base(
@@ -533,11 +549,12 @@ class TransformVisualizer:
         *,
         radii: float = 1.2,
         axis_length: float = 100.0,
+        show_y_both: bool = False,
     ) -> None:
         """Scene view in base frame (with origin axes)."""
         self._log_scene_view(
             "scene_base", pts_base, colors, tcp_poses, show_axes,
-            radii=radii, axis_length=axis_length, show_origin=True,
+            radii=radii, axis_length=axis_length, show_origin=True, show_y_both=show_y_both,
         )
 
     # ---- point cloud helpers ----

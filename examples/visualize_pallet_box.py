@@ -279,6 +279,7 @@ def main():
         colors=colors_vis,
         tcp_poses=tcp_poses_base or None,
         show_axes=has_axes or None,
+        show_y_both=True,
     )
     vis.log_projection_2d(
         K,
