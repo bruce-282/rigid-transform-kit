@@ -18,6 +18,7 @@ viz = [
     "rerun-sdk>=0.20",
     "plyfile>=0.7.0",
     "opencv-python>=4.5",
+    "open3d>=0.19.0",
 ]
 dev = [
     "pytest>=7.0",
