@@ -156,6 +156,33 @@ class RigidTransform:
         return cls.from_Rt(R, t, from_frame, to_frame)
 
     @classmethod
+    def from_vec6(
+        cls,
+        vec6: np.ndarray | list,
+        from_frame: Frame,
+        to_frame: Frame,
+        convention: str = "xyz",
+        degrees: bool = True,
+    ) -> RigidTransform:
+        """Build transform from [x, y, z, r1, r2, r3] (position + Euler angles).
+
+        Parameters
+        ----------
+        vec6 : array-like, length 6
+            [x, y, z] position (mm), [r1, r2, r3] rotation (e.g. WPR in degrees).
+        convention : str
+            scipy euler convention (default "xyz" for Fanuc WPR).
+        degrees : bool
+            True if angles are in degrees.
+        """
+        v = np.asarray(vec6, dtype=np.float64)
+        if v.size != 6:
+            raise ValueError(f"vec6 must have 6 elements, got {v.size}")
+        t = v[:3]
+        euler = v[3:6]
+        return cls.from_euler(t, euler, from_frame, to_frame, convention=convention, degrees=degrees)
+
+    @classmethod
     def from_quat_xyzw(cls, t, quat, from_frame: Frame, to_frame: Frame) -> RigidTransform:
         R = Rotation.from_quat(quat).as_matrix()  # scipy expects xyzw
         return cls.from_Rt(R, t, from_frame, to_frame)

@@ -324,13 +324,11 @@ class TransformVisualizer:
         t = T_base2tcp.t
         R = T_base2tcp.R
         r = arrow_radius if arrow_radius is not None else axis_length * 0.04
-        approach_dir = R[:, 2]
-        t_lifted = t + approach_dir * axis_length * 0.15
-
+        # Overview: use TCP origin as-is (no lift) for correct visualization
         rr.log(
             f"{entity}/origin",
             rr.Points3D(
-                [t_lifted.tolist()],
+                [t.tolist()],
                 colors=[[255, 200, 50]],
                 radii=[r * 2.5],
                 labels=[label.upper()],
@@ -340,7 +338,7 @@ class TransformVisualizer:
             rr.log(
                 f"{entity}/axes",
                 rr.Arrows3D(
-                    origins=[t_lifted.tolist()] * 3,
+                    origins=[t.tolist()] * 3,
                     vectors=[
                         (R[:, 0] * axis_length).tolist(),
                         (R[:, 1] * axis_length).tolist(),
@@ -350,6 +348,14 @@ class TransformVisualizer:
                     radii=[r] * 3,
                 ),
             )
+        # vec6 (x,y,z, W,P,R deg) for inspection in blueprint
+        vec6 = T_base2tcp.to_vec6_euler(convention="xyz", degrees=True)
+        rr.log(
+            f"{entity}/vec6",
+            rr.TextDocument(
+                f"[{vec6[0]:.2f}, {vec6[1]:.2f}, {vec6[2]:.2f}, {vec6[3]:.2f}, {vec6[4]:.2f}, {vec6[5]:.2f}]"
+            ),
+        )
 
     def log_tcp_poses(
         self,

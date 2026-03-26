@@ -24,14 +24,17 @@ import time
 from pathlib import Path
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from rigid_transform_kit import FanucAdapter, Frame, RigidTransform
 from rigid_transform_kit.app import (
+    build_tcp_result,
     extract_picks_from_boxes,
     load_calibration,
     load_cam_targets,
     log_robot_commands,
     picks_to_tcp_poses_base_and_cam,
+    save_tcp_poses,
 )
 from rigid_transform_kit.viz import TransformVisualizer, save_recording
 from utils import load_ply_points
@@ -80,9 +83,7 @@ def parse_args():
         "--box-pcd",
         type=Path,
         nargs="*",
-        default=[DEFAULT_DATA_DIR / "box_pcd1.ply", DEFAULT_DATA_DIR / "box_pcd2.ply",
-        DEFAULT_DATA_DIR / "box_pcd3.ply", DEFAULT_DATA_DIR / "box_pcd4.ply",
-        DEFAULT_DATA_DIR / "box_pcd5.ply", DEFAULT_DATA_DIR / "box_pcd6.ply"],
+        default=[],
         metavar="PLY",
         help="Box PLY file(s) for OBB-based pick; one pick per file",
     )
@@ -94,11 +95,33 @@ def parse_args():
         help="Save to .rrd file (use viewer Save when spawn=True; --save avoids spawn conflict)",
     )
     p.add_argument(
+        "--output", "-o",
+        type=Path,
+        default=None,
+        metavar="JSON",
+        help="Save TCP (and flange if tool-z-offset set) poses to JSON",
+    )
+    p.add_argument(
         "--port",
         type=int,
         default=None,
         metavar="PORT",
         help="Rerun gRPC port (default 9876). Use if port in use (e.g. Windows 10048). Env: RERUN_PORT",
+    )
+    p.add_argument(
+        "--tool-z-offset",
+        type=float,
+        default=0.0,
+        metavar="MM",
+        help="Flange→TCP Z offset in mm (default: 0). If 0, flange poses are not computed or shown.",
+    )
+    p.add_argument(
+        "--tool-rotation",
+        type=float,
+        nargs=3,
+        default=None,
+        metavar=("W", "P", "R"),
+        help="Tool rotation as WPR degrees (Fanuc xyz Euler). e.g. 0 0 105",
     )
     return p.parse_args()
 
@@ -109,11 +132,19 @@ log = logging.getLogger(__name__)
 def main():
     args = parse_args()
 
+    # If data-dir has cam_targets_simple.json and no --cam-targets given, use it (e.g. yonggin_pasto)
+    cam_targets_path = args.cam_targets
+    if cam_targets_path is None:
+        simple = args.data_dir / "cam_targets_simple.json"
+        if simple.exists():
+            cam_targets_path = simple
+            log.info("Using cam targets: %s", cam_targets_path)
+
     T_base2cam, T_cam2base = load_calibration(args.calibration)
 
-    if args.cam_targets is not None:
-        picks = load_cam_targets(args.cam_targets)
-        log.info("Loaded %d cam_targets from %s.", len(picks), args.cam_targets)
+    if cam_targets_path is not None:
+        picks = load_cam_targets(cam_targets_path)
+        log.info("Loaded %d cam_targets from %s.", len(picks), cam_targets_path)
     elif args.box_pcd:
         picks = extract_picks_from_boxes(args.box_pcd)
     else:
@@ -180,18 +211,35 @@ def main():
     # ── TCP poses (base + cam frames) ──
     tcp_poses_base, tcp_poses_cam, has_axes = picks_to_tcp_poses_base_and_cam(picks, T_cam2base)
 
-    fanuc = FanucAdapter(pos_unit="mm", tool_z_offset=200.0)
-    robot_commands = [fanuc.plan_pick(pose) for pose in tcp_poses_base]
-    labels = ["TCP" if ax else "center" for ax in has_axes]
-    log_robot_commands(robot_commands, labels=labels, logger=log)
+    tool_rotation_matrix = None
+    if args.tool_rotation is not None:
+        tool_rotation_matrix = Rotation.from_euler(
+            "xyz", args.tool_rotation, degrees=True
+        ).as_matrix()
+    fanuc = FanucAdapter(
+        pos_unit="mm",
+        tool_z_offset=args.tool_z_offset,
+        tool_rotation=tool_rotation_matrix,
+    )
+    flange_commands = [fanuc.plan_pick(pose) for pose in tcp_poses_base]
+    tcp_commands = [fanuc.to_robot_command(fanuc.resolve_redundancy(pose)) for pose in tcp_poses_base]
 
+    log_robot_commands(tcp_commands,labels=["TCP"] * len(tcp_commands), logger=log)
+    log_robot_commands(flange_commands, labels=["Flange"] * len(flange_commands), logger=log)
+
+    flange_poses_base = None
     if tcp_poses_base:
         vis.log_tcp_poses(tcp_poses_base, parent_path="world/picks", axis_length=100.0, arrow_radius=2.0, show_axes=has_axes)
-        # Flange 좌표계도 Overview (in Base)에 표시 (resolve_redundancy 후 compute_flange_target)
-        flange_poses_base = [
-            fanuc.compute_flange_target(fanuc.resolve_redundancy(p)) for p in tcp_poses_base
-        ]
-        vis.log_flange_poses(flange_poses_base, parent_path="world/flanges", axis_length=100.0)
+        if fanuc.tool_z_offset != 0:
+            flange_poses_base = [
+                fanuc.compute_flange_target(fanuc.resolve_redundancy(p)) for p in tcp_poses_base
+            ]
+            vis.log_flange_poses(flange_poses_base, parent_path="world/flanges", axis_length=100.0)
+
+    if tcp_poses_base and args.output is not None:
+        result = build_tcp_result(tcp_poses_base, tcp_commands, flange_poses=flange_poses_base)
+        save_tcp_poses(result, args.output)
+        log.info("Saved %d TCP+flange poses to %s", len(tcp_poses_base), args.output)
 
     vis.log_scene_in_camera(
         pts_cam=pts_cam_mm,

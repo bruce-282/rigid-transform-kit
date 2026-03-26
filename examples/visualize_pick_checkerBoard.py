@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from rigid_transform_kit import FanucAdapter, Frame, RigidTransform
 from rigid_transform_kit.app import (
@@ -134,8 +135,8 @@ def parse_args():
     p.add_argument(
         "--axis-length",
         type=float,
-        default=50.0,
-        help="Axis length in mm for visualization. Default 50",
+        default=100.0,
+        help="Axis length in mm for visualization. Default 100",
     )
     p.add_argument(
         "--pcd",
@@ -154,9 +155,17 @@ def parse_args():
     p.add_argument(
         "--tool-z-offset",
         type=float,
-        default=200.0,
+        default=100.0,
         metavar="MM",
         help="Flange→TCP offset in mm (default: 200)",
+    )
+    p.add_argument(
+        "--tool-rotation",
+        type=float,
+        nargs=3,
+        default=None,
+        metavar=("W", "P", "R"),
+        help="Tool rotation as WPR (degrees, Fanuc xyz Euler). e.g. 180 0 105",
     )
     return p.parse_args()
 
@@ -216,16 +225,27 @@ def main():
     else:
         raise ValueError("Checkerboard not detected")
     # Fanuc robot commands + TCP save (pallet_box와 동일)
+    tool_rotation_matrix = None
+    if args.tool_rotation is not None:
+        tool_rotation_matrix = Rotation.from_euler(
+            "xyz", args.tool_rotation, degrees=True
+        ).as_matrix()
 
- 
-    fanuc = FanucAdapter(pos_unit="mm", tool_z_offset=args.tool_z_offset)
+    fanuc = FanucAdapter(
+        pos_unit="mm",
+        tool_z_offset=args.tool_z_offset,
+        tool_rotation=tool_rotation_matrix,
+    )
     robot_commands = [fanuc.plan_pick(pose) for pose in tcp_poses_base]
+    flange_poses_base = [
+        fanuc.compute_flange_target(fanuc.resolve_redundancy(p)) for p in tcp_poses_base
+    ]
     labels = ["TCP" if ax else "center" for ax in has_axes]
     log_robot_commands(robot_commands, labels=labels, logger=log)
     if args.output is not None:
-        result = build_tcp_result(tcp_poses_base, robot_commands)
+        result = build_tcp_result(tcp_poses_base, robot_commands, flange_poses=flange_poses_base)
         save_tcp_poses(result, args.output)
-        log.info("Saved %d TCP poses to %s", len(tcp_poses_base), args.output)
+        log.info("Saved %d TCP+flange poses to %s", len(tcp_poses_base), args.output)
 
     pts_cam_mm = None
     pts_base = None
@@ -277,10 +297,6 @@ def main():
 
     if tcp_poses_base:
         vis.log_tcp_poses(tcp_poses_base, parent_path="world/picks", axis_length=100.0, arrow_radius=2.0, show_axes=has_axes)
-        # Flange 좌표계도 Overview (in Base)에 표시 (resolve_redundancy 후 compute_flange_target)
-        flange_poses_base = [
-            fanuc.compute_flange_target(fanuc.resolve_redundancy(p)) for p in tcp_poses_base
-        ]
         vis.log_flange_poses(flange_poses_base, parent_path="world/flanges", axis_length=100.0)
 
     # ── Optional PLY (use undistorted for vis so it matches pose) ──

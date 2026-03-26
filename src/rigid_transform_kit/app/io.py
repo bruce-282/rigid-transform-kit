@@ -31,30 +31,49 @@ def load_calibration(path: Path) -> tuple[RigidTransform, RigidTransform]:
 def build_tcp_result(
     poses: list[RigidTransform],
     robot_commands: list[dict] | None = None,
+    flange_poses: list[RigidTransform] | None = None,
 ) -> dict:
     """Build serializable result dict for TCP poses.
 
-    Returns ``{"picks": {"0": {...}, "1": {...}, ...}}``.
+    Returns ``{"_schema": {...}, "picks": {"0": {...}, "1": {...}, ...}}``.
     Use this for saving to file or sending to protocol.
+    flange_poses: 펜던트에서 플랜지 위치 조정용 (robot_command와 동일 값).
 
     Parameters
     ----------
-    poses : list of RigidTransform
+    poses : list of RigidTransform (TCP poses)
     robot_commands : optional list of vendor command dicts (e.g. from plan_pick)
+    flange_poses : optional list of RigidTransform (flange poses for pendant)
     """
+    schema = {
+        "tcp_pose": "TCP (tool center point) in base frame: position_mm, rotation_3x3, matrix_4x4",
+        "flange_pose": "Flange in base frame (when tool has z-offset/rotation): position_mm, rotation_3x3, matrix_4x4",
+        "tcp_pose_xyzwpr": "TCP in FANUC XYZWPR (X,Y,Z mm; W,P,R deg), for reference",
+        "flange_pose_xyzwpr": "Flange in FANUC XYZWPR (X,Y,Z mm; W,P,R deg), for pendant/controller",
+    }
     picks: dict = {}
     for i, pose in enumerate(poses):
+        # 인덱스별 맨 위: 보기 좋게 XYZWPR 요약 먼저
         pick: dict = {
-            "tcp_pose": {
-                "position_mm": pose.t.tolist(),
-                "rotation_3x3": pose.R.tolist(),
-                "matrix_4x4": pose.matrix.tolist(),
-            },
+            "tcp_pose_xyzwpr": pose.to_xyzwpr(degrees=True),
         }
-        if robot_commands is not None and i < len(robot_commands):
-            pick["robot_command"] = robot_commands[i]
+        if flange_poses is not None and i < len(flange_poses):
+            fp = flange_poses[i]
+            pick["flange_pose_xyzwpr"] = fp.to_xyzwpr(degrees=True)
+            pick["flange_pose"] = {
+                "position_mm": fp.t.tolist(),
+                "rotation_3x3": fp.R.tolist(),
+                "matrix_4x4": fp.matrix.tolist(),
+            }
+        elif robot_commands is not None and i < len(robot_commands):
+            pick["flange_pose_xyzwpr"] = robot_commands[i]
+        pick["tcp_pose"] = {
+            "position_mm": pose.t.tolist(),
+            "rotation_3x3": pose.R.tolist(),
+            "matrix_4x4": pose.matrix.tolist(),
+        }
         picks[str(i)] = pick
-    return {"picks": picks}
+    return {"_schema": schema, "picks": picks}
 
 
 def save_tcp_poses(result: dict, path: Path) -> None:

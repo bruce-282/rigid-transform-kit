@@ -113,7 +113,7 @@ def load_cam_targets(path: Path) -> list["PickPoint"]:
     * ``n_cam`` (optional): surface normal (unit vector). Defaults to [0, 0, -1].
     * ``long_axis_cam`` (optional): long-axis direction (unit vector).
     """
-    from rigid_transform_kit import PickPoint
+    from rigid_transform_kit import Frame, PickPoint, RigidTransform
 
     if not path.exists():
         return []
@@ -125,6 +125,19 @@ def load_cam_targets(path: Path) -> list["PickPoint"]:
 
     picks = []
     for item in arr:
+        if "vec6_cam" in item:
+            # vec6: [x, y, z, rx, ry, rz] (mm, degrees, WPR/xyz)
+            vec6 = np.array(item["vec6_cam"], dtype=np.float64)
+            T_cam2pick = RigidTransform.from_vec6(
+                vec6, Frame.CAMERA, Frame.OBJECT, convention="xyz", degrees=True
+            )
+            p_cam = T_cam2pick.t
+            R = T_cam2pick.R
+            n_cam = R[:, 2].copy()
+            long_axis_cam = R[:, 0].copy()
+            picks.append(PickPoint(p_cam=p_cam, n_cam=n_cam, long_axis_cam=long_axis_cam))
+            continue
+
         p_cam = np.array(item["p_cam"], dtype=np.float64)
 
         n_cam = None

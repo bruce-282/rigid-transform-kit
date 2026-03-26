@@ -60,7 +60,7 @@ class FanucAdapter(BaseRobotAdapter):
 
     def to_robot_command(self, T_base2flange: RigidTransform) -> Dict[str, Any]:
         assert T_base2flange.from_frame == Frame.BASE
-        assert T_base2flange.to_frame == Frame.FLANGE
+        assert T_base2flange.to_frame == Frame.FLANGE or T_base2flange.to_frame == Frame.TCP
 
         cmd = T_base2flange.to_xyzwpr(degrees=True)
         if self.pos_unit == "m":

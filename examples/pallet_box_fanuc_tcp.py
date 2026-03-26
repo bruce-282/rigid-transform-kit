@@ -127,20 +127,19 @@ def main():
     fanuc = FanucAdapter(tool_z_offset=args.tool_z_offset, pos_unit="mm")
 
     robot_commands = [fanuc.plan_pick(pose) for pose in tcp_poses]
-    result = build_tcp_result(tcp_poses, robot_commands)
+    flange_poses = [
+        fanuc.compute_flange_target(fanuc.resolve_redundancy(p)) for p in tcp_poses
+    ]
+    result = build_tcp_result(tcp_poses, robot_commands, flange_poses=flange_poses)
 
     log_robot_commands(robot_commands, logger=log)
 
     if args.verbose:
-        flange_poses = [
-            fanuc.compute_flange_target(fanuc.resolve_redundancy(p))
-            for p in tcp_poses
-        ]
         log_tcp_flange_detail(tcp_poses, flange_poses, logger=log)
 
     if args.output is not None:
         save_tcp_poses(result, args.output)
-        log.info("Saved %d TCP poses to %s", len(tcp_poses), args.output)
+        log.info("Saved %d TCP+flange poses to %s", len(tcp_poses), args.output)
 
 
 if __name__ == "__main__":
