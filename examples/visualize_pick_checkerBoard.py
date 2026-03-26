@@ -16,7 +16,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import subprocess
@@ -42,7 +41,7 @@ try:
 except ImportError:
     cv2 = None
 
-from utils import load_ply_points
+from utils import load_intrinsics_any, load_ply_points
 from utils.checkerboard import checkerboard_to_pick_point, detect_checkerboard_pose, undistort_point_cloud
 
 logging.basicConfig(
@@ -51,25 +50,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
-
-
-def load_intrinsics_for_checkerboard(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """Load K (3,3) and dist (5,) from JSON. Supports sensores.image or plain \"K\"+\"dist\"."""
-    try:
-        from utils import load_intrinsics
-        return load_intrinsics(path)
-    except (KeyError, ImportError):
-        pass
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
-    if "K" in data:
-        K = np.array(data["K"], dtype=np.float64)
-        dist = np.array(data.get("dist", [0.0] * 5), dtype=np.float64)
-    else:
-        raise KeyError("JSON must have sensores.image (intrinsic_matrix, distortion_coefficients) or K+dist")
-    if len(dist) > 5:
-        dist = dist[:5]
-    return K, dist
 
 
 def parse_args():
@@ -182,7 +162,7 @@ def main():
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # Load intrinsics
-    K, dist = load_intrinsics_for_checkerboard(args.intrinsics)
+    K, dist = load_intrinsics_any(args.intrinsics)
     pattern_size = tuple(args.pattern_size)
 
     # Optional: load PLY once (for RGB-depth pose and visualization)

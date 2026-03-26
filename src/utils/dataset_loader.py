@@ -92,6 +92,33 @@ def load_intrinsics(intrinsic_json: Path) -> tuple[np.ndarray, np.ndarray]:
     return K, dist
 
 
+def load_intrinsics_any(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Load K (3,3) and dist (5,) from a camera intrinsics JSON.
+
+    First tries :func:`load_intrinsics` (``sensores.image`` / ``image`` with
+    ``intrinsic_matrix``). If that layout is absent, accepts top-level ``K`` and
+    optional ``dist`` (Brown–Conrady, up to 5 coeffs, zero-padded).
+    """
+    try:
+        return load_intrinsics(path)
+    except KeyError:
+        pass
+    if not path.exists():
+        raise FileNotFoundError(f"Intrinsic not found: {path}")
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if "K" not in data:
+        raise KeyError(
+            "intrinsic JSON must contain sensores.image (intrinsic_matrix) or top-level K (+ dist)"
+        )
+    K = np.array(data["K"], dtype=np.float64)
+    dist = np.array(data.get("dist", [0.0] * 5), dtype=np.float64)
+    if len(dist) > 5:
+        dist = dist[:5]
+    return K, dist
+
+
 def load_cam_targets(path: Path) -> list["PickPoint"]:
     """
     Load pick points from JSON.

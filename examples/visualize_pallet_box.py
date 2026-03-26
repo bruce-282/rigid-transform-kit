@@ -37,7 +37,8 @@ from rigid_transform_kit.app import (
     save_tcp_poses,
 )
 from rigid_transform_kit.viz import TransformVisualizer, save_recording
-from utils import load_ply_points
+from utils import load_intrinsics_any, load_ply_points
+
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "datasets" / "aw_pallet"
 
@@ -57,6 +58,13 @@ def parse_args():
         type=Path,
         default=DEFAULT_DATA_DIR,
         help=f"Base directory for default paths (default: {DEFAULT_DATA_DIR})",
+    )
+    p.add_argument(
+        "--intrinsics",
+        type=Path,
+        required=True,
+        metavar="JSON",
+        help="Camera intrinsics JSON: {\"K\": [[3,3]], \"dist\": [5]}",
     )
     p.add_argument(
         "--calibration",
@@ -133,6 +141,8 @@ def main():
     args = parse_args()
 
     # If data-dir has cam_targets_simple.json and no --cam-targets given, use it (e.g. yonggin_pasto)
+    K, dist = load_intrinsics_any(args.intrinsics)
+
     cam_targets_path = args.cam_targets
     if cam_targets_path is None:
         simple = args.data_dir / "cam_targets_simple.json"
@@ -254,6 +264,14 @@ def main():
         tcp_poses=tcp_poses_base or None,
         show_axes=has_axes or None,
     )
+    vis.log_projection_2d(
+        K,
+        pts_cam=pts_cam_mm,
+        colors=colors_cam,
+        transforms=tcp_poses_cam,
+        axis_length_mm=100.0,
+    )
+
 
     if save_path is not None:
         save_recording(save_path)
