@@ -38,6 +38,7 @@ from rigid_transform_kit.app import (
 )
 from rigid_transform_kit.viz import TransformVisualizer, save_recording
 from utils import load_intrinsics_any, load_ply_points
+from utils.checkerboard import undistort_point_cloud
 
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "datasets" / "aw_pallet"
@@ -204,14 +205,29 @@ def main():
     pts_cam_mm = None
     pts_base = None
     colors_cam = None
+    colors_vis = None
     if ply_data is not None:
         pts_cam_m, colors_cam = ply_data
-        pts_cam_mm = pts_cam_m * 1000.0  # load_ply_points returns meters
+        dist_arr = (
+            np.asarray(dist, dtype=np.float64).ravel()[:5]
+            if dist is not None
+            else np.zeros(5, dtype=np.float64)
+        )
+        if np.any(np.abs(dist_arr) > 1e-10):
+            pts_vis = undistort_point_cloud(pts_cam_m, K, dist_arr)
+            log.info("Undistorted points.")
+            valid = ~np.any(np.isnan(pts_vis), axis=1)
+            pts_cam_m_vis = pts_vis[valid]
+            colors_vis = colors_cam[valid] if colors_cam is not None else None
+        else:
+            pts_cam_m_vis = pts_cam_m
+            colors_vis = colors_cam
+        pts_cam_mm = pts_cam_m_vis * 1000.0  # load_ply_points returns meters
 
         pts_base = T_cam2base.transform_points(pts_cam_mm)
-        vis.log_points("world/pcd", pts_base, colors=colors_cam, radii=1.2)
+        vis.log_points("world/pcd", pts_base, colors=colors_vis, radii=1.2)
         n_pts = len(pts_base)
-        log.info("Logged %d points from PLY (colors=%s).", n_pts, "yes" if colors_cam is not None else "no")
+        log.info("Logged %d points from PLY (colors=%s).", n_pts, "yes" if colors_vis is not None else "no")
         if n_pts > 500_000 and spawn:
             log.warning(
                 "Large point cloud (%d points). For fewer gRPC errors, use --save out.rrd then: rerun out.rrd",
@@ -253,21 +269,21 @@ def main():
 
     vis.log_scene_in_camera(
         pts_cam=pts_cam_mm,
-        colors=colors_cam,
+        colors=colors_vis,
         tcp_poses=tcp_poses_cam or None,
         show_axes=has_axes or None,
     )
 
     vis.log_scene_base(
         pts_base=pts_base,
-        colors=colors_cam,
+        colors=colors_vis,
         tcp_poses=tcp_poses_base or None,
         show_axes=has_axes or None,
     )
     vis.log_projection_2d(
         K,
         pts_cam=pts_cam_mm,
-        colors=colors_cam,
+        colors=colors_vis,
         transforms=tcp_poses_cam,
         axis_length_mm=100.0,
     )

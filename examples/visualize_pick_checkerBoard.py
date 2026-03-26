@@ -287,7 +287,7 @@ def main():
             else np.zeros(5, dtype=np.float64)
         )
         if np.any(np.abs(dist_arr) > 1e-10):
-            pts_vis = undistort_point_cloud(points_cam_m, K, dist)
+            pts_vis = undistort_point_cloud(points_cam_m, K, dist_arr)
             valid = ~np.any(np.isnan(pts_vis), axis=1)
             pts_cam_m_vis = pts_vis[valid]
             colors_vis = colors_cam[valid] if colors_cam is not None else None
