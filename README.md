@@ -13,7 +13,7 @@ T_base2cam @ T_cam2tcp     # → OK: T(BASE→TCP)
 # base (numpy, scipy, pyyaml)
 pip install -e .
 
-# with Rerun 3D visualization (rerun-sdk, plyfile)
+# with Rerun 3D visualization (rerun-sdk)
 pip install -e ".[viz]"
 
 # with dev/test tools
