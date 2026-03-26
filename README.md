@@ -84,14 +84,33 @@ vis.log_picking_pipeline(cam_config, pick, T_base2tcp)
 
 ```bash
 # 캘리브레이션 + PCD + 피킹 포인트 시각화 (pip install -e ".[viz]" 필요)
-python examples/visualize_pallet_box.py --calibration path/to/calib.yml --pcd scene.ply
+# NOTE: --intrinsics 는 필수
+python examples/visualize_pallet_box.py \
+  --intrinsics path/to/intrinsics.json \
+  --calibration path/to/calib.yml \
+  --pcd scene.ply
+
+# XY 양/음 방향 축을 함께 표시
+python examples/visualize_pallet_box.py \
+  --intrinsics path/to/intrinsics.json \
+  --calibration path/to/calib.yml \
+  --pcd scene.ply \
+  --show-xy-both
 
 # 결과를 파일로 저장 후 뷰어로 열기 (실시간 뷰어 대신, gRPC 종료 오류 회피)
-python examples/visualize_pallet_box.py --calibration path/to/calib.yml --pcd scene.ply --save out.rrd
+python examples/visualize_pallet_box.py \
+  --intrinsics path/to/intrinsics.json \
+  --calibration path/to/calib.yml \
+  --pcd scene.ply \
+  --save out.rrd
 rerun out.rrd
 
 # 포트 9876 사용 중일 때 (Windows 10048 등): --port 9877 또는 set RERUN_PORT=9877
-python examples/visualize_pallet_box.py --calibration path/to/calib.yml --pcd scene.ply --port 9877
+python examples/visualize_pallet_box.py \
+  --intrinsics path/to/intrinsics.json \
+  --calibration path/to/calib.yml \
+  --pcd scene.ply \
+  --port 9877
 ```
 
 ## File Structure

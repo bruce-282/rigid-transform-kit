@@ -425,7 +425,7 @@ class TransformVisualizer:
         axis_length: float = 100.0,
         show_origin: bool = False,
         origin_axis_length: float = 300.0,
-        show_y_both: bool = False,
+        show_xy_both: bool = False,
     ) -> None:
         """Log a scene view under *prefix* (PCD + pick orientations).
 
@@ -495,16 +495,23 @@ class TransformVisualizer:
                     z_vec = cam_dir * axis_length
                     x_vec = R[:, 0] * axis_length
                     y_vec = -R[:, 1] * axis_length
-                    if show_y_both:
+                    if show_xy_both:
+                        x_neg_vec = -R[:, 0] * axis_length
                         y_pos_vec = R[:, 1] * axis_length
                         rr.log(
                             f"{prefix}/pick_{i}/axes",
                             rr.Arrows3D(
-                                origins=[t_lifted.tolist()] * 4,
-                                vectors=[x_vec.tolist(), y_pos_vec.tolist(), y_vec.tolist(), z_vec.tolist()],
-                                colors=[AXIS_COLORS[0], [80, 220, 80], AXIS_COLORS[1], AXIS_COLORS[2]],
-                                radii=[radii] * 4,
-                                labels=["X", "Y+", "Y-", "Z (->cam)"],
+                                origins=[t_lifted.tolist()] * 5,
+                                vectors=[
+                                    x_vec.tolist(),
+                                    x_neg_vec.tolist(),
+                                    y_pos_vec.tolist(),
+                                    y_vec.tolist(),
+                                    z_vec.tolist(),
+                                ],
+                                colors=[AXIS_COLORS[0], [255, 140, 140], [80, 220, 80], AXIS_COLORS[1], AXIS_COLORS[2]],
+                                radii=[radii] * 5,
+                                labels=["X+", "X-", "Y+", "Y-", "Z (->cam)"],
                             ),
                             static=True,
                         )
@@ -532,12 +539,12 @@ class TransformVisualizer:
         *,
         radii: float = 1.2,
         axis_length: float = 100.0,
-        show_y_both: bool = False,
+        show_xy_both: bool = False,
     ) -> None:
         """Scene view in camera frame (no origin axes)."""
         self._log_scene_view(
             "cam_view", pts_cam, colors, tcp_poses, show_axes,
-            radii=radii, axis_length=axis_length, show_origin=False, show_y_both=show_y_both,
+            radii=radii, axis_length=axis_length, show_origin=False, show_xy_both=show_xy_both,
         )
 
     def log_scene_base(
@@ -549,12 +556,12 @@ class TransformVisualizer:
         *,
         radii: float = 1.2,
         axis_length: float = 100.0,
-        show_y_both: bool = False,
+        show_xy_both: bool = False,
     ) -> None:
         """Scene view in base frame (with origin axes)."""
         self._log_scene_view(
             "scene_base", pts_base, colors, tcp_poses, show_axes,
-            radii=radii, axis_length=axis_length, show_origin=True, show_y_both=show_y_both,
+            radii=radii, axis_length=axis_length, show_origin=True, show_xy_both=show_xy_both,
         )
 
     # ---- point cloud helpers ----
@@ -586,6 +593,7 @@ class TransformVisualizer:
         point_radii: float = 1.0,
         arrow_radii: float = 0.8,
         base_path: Optional[str] = None,
+        show_xy_both: bool = False,
     ) -> None:
         """Project point cloud and coordinate frames to 2D and log for Rerun 'Projection 2D' view.
 
@@ -624,25 +632,41 @@ class TransformVisualizer:
                     continue
                 u0 = fx * (t[0] / t[2]) + cx
                 v0 = fy * (t[1] / t[2]) + cy
-                axes_3d = R * axis_length_mm
+                axis_defs: list[tuple[np.ndarray, list[int], str]] = [
+                    (R[:, 0] * axis_length_mm, AXIS_COLORS[0], "X+"),
+                    ((-R[:, 1]) * axis_length_mm, AXIS_COLORS[1], "Y-"),
+                    ((-R[:, 2]) * axis_length_mm, AXIS_COLORS[2], "Z (->cam)"),
+                ]
+                if show_xy_both:
+                    axis_defs = [
+                        (R[:, 0] * axis_length_mm, AXIS_COLORS[0], "X+"),
+                        ((-R[:, 0]) * axis_length_mm, [255, 140, 140], "X-"),
+                        (R[:, 1] * axis_length_mm, [80, 220, 80], "Y+"),
+                        ((-R[:, 1]) * axis_length_mm, AXIS_COLORS[1], "Y-"),
+                        ((-R[:, 2]) * axis_length_mm, AXIS_COLORS[2], "Z (->cam)"),
+                    ]
                 origins_2d = []
                 vectors_2d = []
-                for j in range(3):
-                    end = t + axes_3d[:, j]
+                colors_2d = []
+                labels_2d = []
+                for axis_vec, axis_color, axis_label in axis_defs:
+                    end = t + axis_vec
                     if end[2] <= 0:
                         continue
                     u1 = fx * (end[0] / end[2]) + cx
                     v1 = fy * (end[1] / end[2]) + cy
                     origins_2d.append([u0, v0])
                     vectors_2d.append([u1 - u0, v1 - v0])
+                    colors_2d.append(axis_color)
+                    labels_2d.append(axis_label)
                 if origins_2d:
                     rr.log(
                         f"{base_path}/frame_{i}",
                         rr.Arrows2D(
                             origins=origins_2d,
                             vectors=vectors_2d,
-                            colors=AXIS_COLORS[: len(origins_2d)],
-                            labels=["X", "Y", "Z"][: len(origins_2d)],
+                            colors=colors_2d,
+                            labels=labels_2d,
                             radii=arrow_radii,
                             draw_order=50.0,
                         ),

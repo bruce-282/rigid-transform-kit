@@ -132,6 +132,11 @@ def parse_args():
         metavar=("W", "P", "R"),
         help="Tool rotation as WPR degrees (Fanuc xyz Euler). e.g. 0 0 105",
     )
+    p.add_argument(
+        "--show-xy-both",
+        action="store_true",
+        help="Show both +X/-X and +Y/-Y axes for TCP in scene and 2D projection.",
+    )
     return p.parse_args()
 
 
@@ -272,6 +277,7 @@ def main():
         colors=colors_vis,
         tcp_poses=tcp_poses_cam or None,
         show_axes=has_axes or None,
+        show_xy_both=args.show_xy_both,
     )
 
     vis.log_scene_base(
@@ -279,7 +285,7 @@ def main():
         colors=colors_vis,
         tcp_poses=tcp_poses_base or None,
         show_axes=has_axes or None,
-        show_y_both=True,
+        show_xy_both=args.show_xy_both,
     )
     vis.log_projection_2d(
         K,
@@ -287,6 +293,7 @@ def main():
         colors=colors_vis,
         transforms=tcp_poses_cam,
         axis_length_mm=100.0,
+        show_xy_both=args.show_xy_both,
     )
 
 
