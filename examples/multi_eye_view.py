@@ -29,6 +29,8 @@ Usage::
     --cam1-ply datasets/_source_capture/camera_primary/0_....ply \\
     --cam2-ply datasets/_source_capture/camera_secondary/0_....ply \\
     --extrinsic datasets/_source_capture/stereo_extrinsic_example.yml
+
+  uv run python examples/multi_eye_view.py --save output/multi_view.rrd
 """
 
 from __future__ import annotations
@@ -36,12 +38,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import subprocess
+import time
 from pathlib import Path
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from rigid_transform_kit.viz import TransformVisualizer
+from rigid_transform_kit.viz import TransformVisualizer, save_recording
 
 from utils import clip_depth_range, load_intrinsics_any, load_ply_points
 
@@ -295,7 +299,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--depth-max-m",
         type=float,
-        default=2.0,
+        default=3.0,
         metavar="M",
         help="Depth clip upper bound in meters. Default 1",
     )
@@ -316,6 +320,13 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Rerun gRPC port if needed",
+    )
+    p.add_argument(
+        "--save",
+        type=Path,
+        default=None,
+        metavar="RRD",
+        help="Save recording to .rrd (disables live spawn; then opens: rerun FILE)",
     )
     return p.parse_args()
 
@@ -386,9 +397,15 @@ def main() -> None:
     pts1_mm, col1 = _maybe_subsample(pts1_mm, col1, args.max_points)
     pts2_mm, col2 = _maybe_subsample(pts2_mm, col2, args.max_points)
 
+    save_path = args.save
+    spawn = save_path is None
+    if save_path is not None:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        log.info("Saving to %s (spawn disabled).", save_path)
+
     vis = TransformVisualizer(
         "multi_eye_view",
-        spawn=True,
+        spawn=spawn,
         port=args.port,
         views=[("Stereo (cam1 frame)", "world/scene")],
     )
@@ -484,6 +501,25 @@ def main() -> None:
         len(pts1_mm),
         len(pts2_mm),
     )
+
+    if save_path is not None:
+        save_recording(save_path)
+        log.info("Saved to %s", save_path)
+        try:
+            subprocess.run(["rerun", str(save_path)], check=False)
+        except FileNotFoundError:
+            log.info("Run: rerun %s", save_path)
+
+    if spawn:
+        import rerun as rr
+
+        rec = rr.get_global_data_recording()
+        if rec is not None:
+            try:
+                rec.flush(timeout_sec=10.0)
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(1.0)
 
 
 if __name__ == "__main__":
