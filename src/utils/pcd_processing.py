@@ -3,6 +3,42 @@ import numpy as np
 from typing import Tuple, Dict
 
 
+def clip_depth_range(
+    points: np.ndarray,
+    depth_min_m: float = 0.0,
+    depth_max_m: float = 1.0,
+    *,
+    depth_axis: int = 2,
+    colors: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Keep points whose coordinate along *depth_axis* lies in ``[depth_min_m, depth_max_m]``.
+
+    Typical camera frame: Z (axis=2) is forward depth in meters.
+
+    Parameters
+    ----------
+    points : (N, 3) float
+    depth_min_m, depth_max_m : inclusive clip range in meters.
+    depth_axis : 0, 1, or 2 — which column is treated as depth.
+    colors : (N, 3) uint8 optional, filtered with the same mask.
+
+    Returns
+    -------
+    points_kept, colors_kept
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    if pts.ndim != 2 or pts.shape[1] < 3:
+        raise ValueError(f"points must be (N, 3+), got {pts.shape}")
+    if depth_axis not in (0, 1, 2):
+        raise ValueError("depth_axis must be 0, 1, or 2")
+
+    z = pts[:, depth_axis]
+    mask = (z >= depth_min_m) & (z <= depth_max_m)
+    out_pts = pts[mask]
+    out_colors = colors[mask] if colors is not None else None
+    return out_pts, out_colors
+
+
 def remove_statistical_outlier(
     pcd: o3d.geometry.PointCloud,
     nb_neighbors: int = 20,

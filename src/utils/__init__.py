@@ -1,4 +1,5 @@
 from .pcd_processing import (
+    clip_depth_range,
     fit_plane,
     get_box_axes,
     remove_statistical_outlier,
