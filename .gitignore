@@ -27,5 +27,7 @@ env/
 .DS_Store
 Thumbs.db
 
-# datasets
-datasets/
+# datasets (ignore all, then unignore example sets)
+datasets/*
+!datasets/multi_eye_example/
+datasets/multi_eye_example/*.rrd

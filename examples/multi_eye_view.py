@@ -17,7 +17,7 @@ examples / multi_eye_view.py
 ``world/scene/tcp_from_filename`` 에 표시합니다 (기본 ON). 해석은 ``--tcp-pose-frame``:
 로봇 **base**면 ``base_to_cam`` 으로 cam1에 올리고, 이미 **cam1**이면 그대로 그립니다.
 
-* extrinsic YAML: ``cam2_pose_matrix`` (OpenCV ``!!opencv-matrix`` 또는 4x4 중첩 리스트)
+* extrinsic YAML: ``cam1_to_cam2`` (또는 ``cam2_pose_matrix``, OpenCV ``!!opencv-matrix`` 또는 4x4 중첩 리스트)
   — **cam1 기준 cam2**: ``p_cam1 = T @ p_cam2`` (동차 좌표).
 
 Requires: ``pip install -e ".[viz]"`` (open3d: PLY 로드 시 권장)
@@ -38,15 +38,8 @@ RGB 끄기: ``--no-rgb``.
 3D Stereo 뷰에서 RGB 평면이 PLY를 너무 덮으면 ``--image-plane-mm-3d`` 를 더 줄이면 됩니다 (기본 200 mm).
 이 값은 ``world/scene/cam{1,2}_rgb`` 의 Pinhole ``image_plane_distance`` 에 적용됩니다.
 
-기본으로 ``datasets/_source_capture/base_to_cam_cam1_example.yml`` (``base_to_cam``)을 읽어
-**cam1 좌표계** 안 ``world/scene/robot_base`` 에 베이스 축을 그립니다. 끄기: ``--no-robot-base``.
-
-행렬은 **역을 쓰지 않고** 그대로 Rerun ``Transform3D``(ParentFromChild)에 넣습니다. 즉 YAML이
-``p_cam1 = M @ p_base`` (**base→cam1**) 일 때 베이스 원점·축이 cam1에서 올바릅니다.
-파일이 실제로 ``p_base = M @ p_cam1`` (**cam→base**) 이면 ``--invert-base-calibration`` 을 켜세요.
-
-다른 YAML은 ``--base-calibration`` 으로 지정. 형식: ``base_to_cam`` 4x4 또는
-``utils.load_extrinsics`` (``base2cam`` / ``camera_calibration``).
+extrinsic YAML에 ``base_to_cam1`` 키가 있으면 ``world/scene/robot_base`` 에 베이스 축을 그립니다.
+끄기: ``--no-robot-base``. ``--invert-base-calibration`` 으로 역행렬 적용 가능.
 
 **Debug visualization (frame convention 검증용):**
 
@@ -62,9 +55,9 @@ Usage::
   uv run python examples/multi_eye_view.py
 
   uv run python examples/multi_eye_view.py \\
-    --cam1-ply datasets/_source_capture/camera_primary/0_....ply \\
-    --cam2-ply datasets/_source_capture/camera_secondary/0_....ply \\
-    --extrinsic datasets/_source_capture/stereo_extrinsic_example.yml
+    --cam1-ply datasets/multi_eye_example/cam1/cam1.ply \\
+    --cam2-ply datasets/multi_eye_example/cam2/cam2.ply \\
+    --extrinsic datasets/multi_eye_example/multi_eye_cal.yml
 
   uv run python examples/multi_eye_view.py --save output/multi_view.rrd
 """
@@ -89,15 +82,8 @@ from utils import clip_depth_range, load_intrinsics_any, load_ply_points
 log = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-_DEFAULT_PLY_CAM1 = (
-    REPO_ROOT
-    / "datasets/_source_capture/camera_primary/0_1006.205_486.709_-86.209_-179.513_-0.574_-128.436.ply"
-)
-_DEFAULT_PLY_CAM2 = (
-    REPO_ROOT
-    / "datasets/_source_capture/camera_secondary/0_1006.205_486.709_-86.209_-179.513_-0.574_-128.436.ply"
-)
-_DEFAULT_BASE_TO_CAM_YAML = REPO_ROOT / "datasets/_source_capture/base_to_cam_cam1_example.yml"
+_DEFAULT_PLY_CAM1 = REPO_ROOT / "datasets/multi_eye_example/cam1/cam1.ply"
+_DEFAULT_PLY_CAM2 = REPO_ROOT / "datasets/multi_eye_example/cam2/cam2.ply"
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +191,7 @@ def _log_base_raw(
 # 기존 IO 헬퍼
 # ---------------------------------------------------------------------------
 def _load_4x4_from_yaml(path: Path) -> np.ndarray:
-    """Load 4x4 ``cam2_pose_matrix`` (or ``T_cam1_cam2``) from YAML."""
+    """Load 4x4 ``cam1_to_cam2`` (or ``cam2_pose_matrix``, ``T_cam1_cam2``) from YAML."""
     if not path.exists():
         raise FileNotFoundError(path)
 
@@ -218,7 +204,7 @@ def _load_4x4_from_yaml(path: Path) -> np.ndarray:
         doc = yaml.safe_load(f)
 
     if isinstance(doc, dict):
-        for key in ("cam2_pose_matrix", "T_cam1_cam2", "T_cam1_to_cam2"):
+        for key in ("cam1_to_cam2", "cam2_pose_matrix", "T_cam1_cam2", "T_cam1_to_cam2"):
             if key not in doc:
                 continue
             obj = doc[key]
@@ -238,7 +224,7 @@ def _load_4x4_from_yaml(path: Path) -> np.ndarray:
 
         fs = cv2.FileStorage(str(path), cv2.FILE_STORAGE_READ)
         try:
-            for key in ("cam2_pose_matrix", "T_cam1_cam2", "T_cam1_to_cam2"):
+            for key in ("cam1_to_cam2", "cam2_pose_matrix", "T_cam1_cam2", "T_cam1_to_cam2"):
                 node = fs.getNode(key)
                 if not node.empty():
                     m = node.mat()
@@ -252,9 +238,28 @@ def _load_4x4_from_yaml(path: Path) -> np.ndarray:
         pass
 
     raise KeyError(
-        "YAML must contain cam2_pose_matrix or T_cam1_cam2 "
+        "YAML must contain cam1_to_cam2, cam2_pose_matrix, or T_cam1_cam2 "
         "(4x4 nested list, opencv-matrix dict, or OpenCV FileStorage YAML)"
     )
+
+
+def _try_load_base_to_cam1(path: Path) -> np.ndarray | None:
+    """Return 4x4 ``base_to_cam1`` from *path* if present, else None."""
+    try:
+        import yaml
+    except ImportError:
+        return None
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f)
+    if not isinstance(doc, dict):
+        return None
+    for key in ("base_to_cam1", "base_to_cam"):
+        if key not in doc:
+            continue
+        arr = np.asarray(doc[key], dtype=np.float64)
+        if arr.shape == (4, 4):
+            return arr
+    return None
 
 
 def _load_rgb_hwc(rgb_path: Path) -> np.ndarray | None:
@@ -380,8 +385,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--extrinsic",
         type=Path,
-        default=REPO_ROOT / "datasets/_source_capture/stereo_extrinsic_example.yml",
-        help="YAML with cam2_pose_matrix (cam1 <- cam2)",
+        default=REPO_ROOT / "datasets/multi_eye_example/multi_eye_cal.yml",
+        help="YAML with cam1_to_cam2 (stereoCalibrate output, cam1→cam2). Internally inverted to cam2→cam1 for p_cam1 = T @ p_cam2.",
     )
     p.add_argument(
         "--cam1-rgb",
@@ -473,16 +478,9 @@ def parse_args() -> argparse.Namespace:
         help="Save recording to .rrd (disables live spawn; then opens: rerun FILE)",
     )
     p.add_argument(
-        "--base-calibration",
-        type=Path,
-        default=_DEFAULT_BASE_TO_CAM_YAML,
-        metavar="YAML",
-        help="base→cam1 extrinsic YAML (default: datasets/_source_capture/base_to_cam_cam1_example.yml)",
-    )
-    p.add_argument(
         "--no-robot-base",
         action="store_true",
-        help="Do not log robot base frame (ignore --base-calibration)",
+        help="Do not log robot base frame (even if base_to_cam1 is in extrinsic YAML)",
     )
     p.add_argument(
         "--invert-base-calibration",
@@ -540,31 +538,6 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def load_base_to_cam_matrix(path: Path) -> np.ndarray:
-    """Return 4x4 ``T_base2cam`` (mm). Supports ``base_to_cam`` in YAML or :func:`utils.load_extrinsics` files."""
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Base calibration YAML not found: {path}\n"
-            "Pass a real file path (e.g. your ``base_to_cam`` YAML). "
-            "Documentation placeholders like ``path/to/...`` are not valid paths."
-        )
-    try:
-        import yaml
-    except ImportError as e:
-        raise ImportError("PyYAML required") from e
-
-    with open(path, encoding="utf-8") as f:
-        doc = yaml.safe_load(f)
-    node = doc.get("config", doc)
-    if isinstance(node, dict) and "base_to_cam" in node:
-        arr = np.asarray(node["base_to_cam"], dtype=np.float64)
-        if arr.shape == (4, 4):
-            return arr
-
-    from utils import load_extrinsics
-
-    return load_extrinsics(path)["base2cam"]
-
 
 def parse_tcp_vec6_from_ply_filename(path: Path) -> np.ndarray | None:
     """Parse stem ``[idx_]_x_y_z_W_P_R`` → vec6 (mm, Fanuc xyz WPR degrees).
@@ -607,18 +580,18 @@ def main() -> None:
     debug_origins = not args.no_debug_origins
     debug_links = not args.no_debug_links
 
-    base_cal_path = None if args.no_robot_base else args.base_calibration
-    if base_cal_path is not None and not base_cal_path.exists():
-        raise SystemExit(
-            f"--base-calibration: file not found: {base_cal_path}\n"
-            "Use an existing YAML (``base_to_cam`` 4x4 or hand-eye ``base2cam`` / ``camera_calibration``), "
-            "or ``--no-robot-base`` to skip."
-        )
-
-    T = _load_4x4_from_yaml(args.extrinsic)
+    T_cam1_to_cam2 = _load_4x4_from_yaml(args.extrinsic)
+    T = np.linalg.inv(T_cam1_to_cam2)  # cam2→cam1: p_cam1 = T @ p_cam2
     R = T[:3, :3]
     t = T[:3, 3]
     quat_xyzw = Rotation.from_matrix(R).as_quat().tolist()
+
+    # extrinsic YAML 안에 base_to_cam1 키가 있으면 사용, 없으면 스킵
+    M_base2cam_from_extrinsic: np.ndarray | None = None
+    if not args.no_robot_base:
+        M_base2cam_from_extrinsic = _try_load_base_to_cam1(args.extrinsic)
+        if M_base2cam_from_extrinsic is not None:
+            log.info("Loaded base_to_cam1 from extrinsic YAML: %s", args.extrinsic)
 
     ply1 = load_ply_points(args.cam1_ply)
     ply2 = load_ply_points(args.cam2_ply)
@@ -691,9 +664,8 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Robot base (cam1 좌표계)
     # ------------------------------------------------------------------
-    M_base2cam: np.ndarray | None = None
-    if base_cal_path is not None:
-        M_base2cam = load_base_to_cam_matrix(base_cal_path)
+    M_base2cam: np.ndarray | None = M_base2cam_from_extrinsic
+    if M_base2cam is not None:
         if args.invert_base_calibration:
             M_base2cam = np.linalg.inv(M_base2cam)
             log.info("Using inv(base matrix): YAML treated as cam→base, logging as base→cam1.")
@@ -705,7 +677,7 @@ def main() -> None:
             axis_length=args.base_axis_mm,
             label="ROBOT_BASE",
         )
-        log.info("Logged robot base in camera 1 frame from %s", base_cal_path)
+        log.info("Logged robot base in camera 1 frame from %s", args.extrinsic)
 
         # 디버그: base frame 에 라벨 달린 축 + 원점 sphere 추가
         if debug_axes:
