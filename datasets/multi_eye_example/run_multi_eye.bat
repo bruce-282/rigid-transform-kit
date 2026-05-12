@@ -6,9 +6,9 @@ set SCRIPT_DIR=%~dp0
 set REPO_ROOT=%SCRIPT_DIR%..\..
 cd /d "%REPO_ROOT%"
 
-python examples/multi_eye_view.py ^
-  --cam1-ply "datasets/multi_eye_example/cam1/cam1.ply" ^
-  --cam2-ply "datasets/multi_eye_example/cam2/cam2.ply" ^
+python examples/calibration/multi_eye_view.py ^
+  --cam1-ply "datasets/multi_eye_example/cam1/0_314.612_915.754_-147.026_177.927_-23.441_127.045.ply" ^
+  --cam2-ply "datasets/multi_eye_example/cam2/0_314.612_915.754_-147.026_177.927_-23.441_127.045.ply" ^
   --extrinsic "datasets/multi_eye_example/multi_eye_cal.yml" ^
   --no-rgb ^
   --save "datasets/multi_eye_example/multi_eye.rrd" ^

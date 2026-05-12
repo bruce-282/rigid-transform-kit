@@ -67,21 +67,26 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import subprocess
-import time
 from pathlib import Path
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
 from rigid_transform_kit import Frame, RigidTransform
-from rigid_transform_kit.viz import TransformVisualizer, save_recording
+from rigid_transform_kit.viz import TransformVisualizer
 
 from utils import clip_depth_range, load_intrinsics_any, load_ply_points
 
+from _viz_common import (
+    finalize_viewer,
+    load_4x4_matrices,
+    parse_tcp_vec6_from_filename,
+    subsample,
+)
+
 log = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEFAULT_PLY_CAM1 = REPO_ROOT / "datasets/multi_eye_example/cam1/cam1.ply"
 _DEFAULT_PLY_CAM2 = REPO_ROOT / "datasets/multi_eye_example/cam2/cam2.ply"
 
@@ -244,32 +249,15 @@ def _load_4x4_from_yaml(path: Path) -> np.ndarray:
 
 
 def _try_load_base_to_cam1(path: Path) -> np.ndarray | None:
-    """Return 4x4 ``base_to_cam1`` (p_cam1 = M @ p_base) from *path* if present, else None.
-
-    Supported YAML keys (priority order):
-      - ``base_to_cam1``, ``base_to_cam``: used directly
-      - ``cam_to_base``, ``cam1_to_base``: inverted (p_base = M @ p_cam → inv → p_cam = M⁻¹ @ p_base)
-    """
-    try:
-        import yaml
-    except ImportError:
-        return None
-    with open(path, encoding="utf-8") as f:
-        doc = yaml.safe_load(f)
-    if not isinstance(doc, dict):
-        return None
+    """Return 4x4 ``base_to_cam1`` (p_cam1 = M @ p_base) from *path* if present, else None."""
+    direct = load_4x4_matrices(path, ("base_to_cam1", "base_to_cam"))
     for key in ("base_to_cam1", "base_to_cam"):
-        if key not in doc:
-            continue
-        arr = np.asarray(doc[key], dtype=np.float64)
-        if arr.shape == (4, 4):
-            return arr
+        if key in direct:
+            return direct[key]
+    inverse = load_4x4_matrices(path, ("cam_to_base", "cam1_to_base"))
     for key in ("cam_to_base", "cam1_to_base"):
-        if key not in doc:
-            continue
-        arr = np.asarray(doc[key], dtype=np.float64)
-        if arr.shape == (4, 4):
-            return np.linalg.inv(arr)
+        if key in inverse:
+            return np.linalg.inv(inverse[key])
     return None
 
 
@@ -550,27 +538,7 @@ def parse_args() -> argparse.Namespace:
 
 
 
-def parse_tcp_vec6_from_ply_filename(path: Path) -> np.ndarray | None:
-    """Parse stem ``[idx_]_x_y_z_W_P_R`` → vec6 (mm, Fanuc xyz WPR degrees).
-
-    Example stem: ``0_1006.205_486.709_-86.209_-179.513_-0.574_-128.436`` → skips leading
-    index ``0``, then x,y,z,W,P,R. Same Euler convention as :func:`RigidTransform.from_vec6`
-    (``convention='xyz'``) and ``visualize_pallet_box`` ``--tool-rotation``.
-    """
-    parts = path.stem.split("_")
-    floats: list[float] = []
-    for p in parts:
-        try:
-            floats.append(float(p))
-        except ValueError:
-            return None
-    if len(floats) < 6:
-        return None
-    if len(floats) == 6:
-        return np.array(floats, dtype=np.float64)
-    if len(floats) == 7:
-        return np.array(floats[1:7], dtype=np.float64)
-    return np.array(floats[-6:], dtype=np.float64)
+parse_tcp_vec6_from_ply_filename = parse_tcp_vec6_from_filename
 
 
 def _maybe_subsample(pts: np.ndarray, colors: np.ndarray | None, max_n: int) -> tuple[np.ndarray, np.ndarray | None]:
@@ -686,7 +654,7 @@ def main() -> None:
         vis.log_transform(
             "world/scene/robot_base",
             T_base_to_cam1,
-            axis_length=args.base_axis_mm,
+            axis_length=300.0,
             label="ROBOT_BASE",
         )
         log.info("Logged robot base in camera 1 frame from %s", args.extrinsic)
@@ -695,7 +663,7 @@ def main() -> None:
         if debug_axes:
             _log_frame_axes(
                 "world/scene/robot_base",
-                axis_length_mm=args.base_axis_mm,
+                axis_length_mm=300.0,
                 frame_label="BASE",
                 origin_color=(255, 255, 0),  # yellow
                 origin_radius=12.0,
@@ -707,7 +675,7 @@ def main() -> None:
             _log_base_raw(
                 "world/scene/robot_base_raw",
                 M_base_to_cam1,
-                axis_length_mm=args.base_axis_mm * 0.7,  # 살짝 작게 → 겹쳐도 구분
+                axis_length_mm=210.0,
                 frame_label="BASE_RAW",
             )
             log.info(
@@ -942,24 +910,7 @@ def main() -> None:
         len(pts2_mm),
     )
 
-    if save_path is not None:
-        save_recording(save_path)
-        log.info("Saved to %s", save_path)
-        try:
-            subprocess.run(["rerun", str(save_path)], check=False)
-        except FileNotFoundError:
-            log.info("Run: rerun %s", save_path)
-
-    if spawn:
-        import rerun as rr
-
-        rec = rr.get_global_data_recording()
-        if rec is not None:
-            try:
-                rec.flush(timeout_sec=10.0)
-            except Exception:  # noqa: BLE001
-                pass
-            time.sleep(1.0)
+    finalize_viewer(save_path, spawn=spawn, app_name="Stereo (camera 1)")
 
 
 if __name__ == "__main__":

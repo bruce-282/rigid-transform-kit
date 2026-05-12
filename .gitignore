@@ -31,3 +31,7 @@ Thumbs.db
 datasets/*
 !datasets/multi_eye_example/
 datasets/multi_eye_example/*.rrd
+!datasets/hand_eye_example/
+datasets/hand_eye_example/*.rrd
+!datasets/fixed_eye_example/
+datasets/fixed_eye_example/*.rrd
