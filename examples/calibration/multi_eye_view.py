@@ -1,65 +1,20 @@
 """
-examples / multi_eye_view.py
-=============================
-**설계 목표 (단일 좌표계: camera 1):** 3D 씬 안에서 모든 기하를 **cam1 좌표계**로 맞춥니다.
+examples / calibration / multi_eye_view.py
+==========================================
+모든 기하를 **cam1 좌표계**로 통일하여 Rerun 으로 시각화합니다.
 
-* **cam1 PLY** — cam1 좌표로 적혀 있다고 보고 ``world/scene/cam1`` 에 그대로 표시합니다.
-* **cam2 PLY** — extrinsic으로 **cam1 좌표**로 변환한 뒤 ``world/scene/cam2`` 에 표시합니다
-  (``p_cam1 = T @ p_cam2``).
-* **로봇 베이스 축** — ``base_to_cam`` (``p_cam1 = M @ p_base``)으로 **같은 cam1 좌표계** 안에
-  ``world/scene/robot_base`` 로 그립니다.
-
-**전제:** ``--cam1-ply`` 파일의 (x,y,z)가 실제로 **그 카메라 1 프레임**이어야 위가 한눈에 맞습니다.
-캡처/export가 다른 프레임(예: 베이스)이면 스크립트가 자동으로 바꿔 주지는 않습니다.
-
-**TCP (파일명):** stem이 ``[인덱스_]_x_y_z_W_P_R`` (mm, Fanuc xyz WPR °)이면
-``examples/visualize_pallet_box.py`` 의 ``--tool-rotation`` 과 같은 vec6으로 TCP를 읽어
-``world/scene/tcp_from_filename`` 에 표시합니다 (기본 ON). 해석은 ``--tcp-pose-frame``:
-로봇 **base**면 ``base_to_cam`` 으로 cam1에 올리고, 이미 **cam1**이면 그대로 그립니다.
-
-* extrinsic YAML: ``cam1_to_cam2`` (또는 ``cam2_pose_matrix``, OpenCV ``!!opencv-matrix`` 또는 4x4 중첩 리스트)
-  — **cam1 기준 cam2**: ``p_cam1 = T @ p_cam2`` (동차 좌표).
-
-Requires: ``pip install -e ".[viz]"`` (open3d: PLY 로드 시 권장)
-
-기본으로 각 PLY 점을 **카메라 깊이 축(Z, m)** 기준 ``0~1`` m 로 클립합니다.
-끄려면 ``--no-depth-clip``, 범위 변경은 ``--depth-min-m`` / ``--depth-max-m`` / ``--depth-axis``.
-
-기본으로 각 카메라 **RGB PNG + 인트린식 JSON** 을 읽어 ``Pinhole`` + ``Image`` 를 올립니다.
-
-* **3D (cam1 좌표계):** ``world/scene/cam1_rgb``, ``world/scene/cam2_rgb`` — Pinhole 전용 entity.
-  3D 콘텐츠가 있는 ``world/scene/cam1`` / ``cam2`` 와 **분리된 sibling**으로 두어야 Rerun 의
-  2D subspace 규칙을 위반하지 않는다 ("pinhole's child frame ... does not form the root of a 2D subspace").
-* **Spatial2DView 탭:** ``world`` 에 ``Transform3D`` 가 있으면 그 **아래** 어디에 두든 Pinhole 2D 루트가 깨질 수 있어,
-  ``world`` 밖 최상위 ``rerun_2d/cam1``, ``rerun_2d/cam2`` 에만 동일 RGB를 한 번 더 로그합니다.
-
-RGB 끄기: ``--no-rgb``.
-
-3D Stereo 뷰에서 RGB 평면이 PLY를 너무 덮으면 ``--image-plane-mm-3d`` 를 더 줄이면 됩니다 (기본 200 mm).
-이 값은 ``world/scene/cam{1,2}_rgb`` 의 Pinhole ``image_plane_distance`` 에 적용됩니다.
-
-extrinsic YAML에 ``base_to_cam1`` 키가 있으면 ``world/scene/robot_base`` 에 베이스 축을 그립니다.
-끄기: ``--no-robot-base``. ``--invert-base-calibration`` 으로 역행렬 적용 가능.
-
-**Debug visualization (frame convention 검증용):**
-
-* ``--debug-axes`` (기본 ON): 모든 frame의 축을 **큰 라벨 + 서로 다른 길이**로 그려 혼동 방지.
-* ``--debug-origins`` (기본 ON): 각 frame 원점에 sphere 점을 찍어 원점 위치를 직관적으로 표시.
-* ``--debug-links`` (기본 ON): cam1 원점에서 cam2, robot_base 원점까지 선을 그어 상대 배치 표시.
-* ``--raw-base-transform`` (기본 OFF): ``rigid_transform_kit`` 을 우회하고 원시 Rerun API로
-  base transform을 추가 로그 (``world/scene/robot_base_raw``). 두 entity가 정확히 겹치면
-  기존 코드가 맞다는 확증이 됩니다.
+* cam1 PLY — 그대로 표시.
+* cam2 PLY — extrinsic (cam1_to_cam2) 역행렬로 cam1 프레임으로 변환.
+* 로봇 베이스 — base_to_cam (p_cam1 = M @ p_base) 으로 배치.
+* TCP — PLY 파일명 vec6 파싱 (선택).
+* RGB Pinhole — 각 카메라 PNG + 인트린식 JSON (선택).
 
 Usage::
 
-  uv run python examples/multi_eye_view.py
-
-  uv run python examples/multi_eye_view.py \\
-    --cam1-ply datasets/multi_eye_example/cam1/cam1.ply \\
-    --cam2-ply datasets/multi_eye_example/cam2/cam2.ply \\
-    --extrinsic datasets/multi_eye_example/multi_eye_cal.yml
-
-  uv run python examples/multi_eye_view.py --save output/multi_view.rrd
+  uv run python examples/calibration/multi_eye_view.py
+  uv run python examples/calibration/multi_eye_view.py \\
+    --cam1-ply path/to/cam1.ply --cam2-ply path/to/cam2.ply \\
+    --extrinsic path/to/multi_eye_cal.yml
 """
 
 from __future__ import annotations
@@ -80,6 +35,9 @@ from utils import clip_depth_range, load_intrinsics_any, load_ply_points
 from _viz_common import (
     finalize_viewer,
     load_4x4_matrices,
+    log_camera_frustum,
+    log_debug_link,
+    log_origin_spheres,
     parse_tcp_vec6_from_filename,
     subsample,
 )
@@ -92,109 +50,9 @@ _DEFAULT_PLY_CAM2 = REPO_ROOT / "datasets/multi_eye_example/cam2/cam2.ply"
 
 
 # ---------------------------------------------------------------------------
-# Debug visualization helpers — frame convention 검증용
+# IO helpers
 # ---------------------------------------------------------------------------
-# 국룰: X=Red, Y=Green, Z=Blue (Rerun convention과 일치)
 _AXIS_COLORS = [[255, 0, 0], [0, 255, 0], [0, 0, 255]]
-
-
-def _log_frame_axes(
-    entity: str,
-    *,
-    axis_length_mm: float,
-    frame_label: str,
-    origin_color: tuple[int, int, int] = (255, 255, 0),
-    origin_radius: float = 8.0,
-    with_origin: bool = True,
-) -> None:
-    """Log RGB-colored XYZ arrows + origin sphere at *entity* (local frame).
-
-    *frame_label* 은 "CAM1", "CAM2", "BASE" 등 frame 이름. 축 라벨은
-    ``"{frame_label}_X"`` 형식으로 찍혀서 여러 frame 겹쳐도 구분된다.
-    """
-    import rerun as rr
-
-    rr.log(
-        f"{entity}/axes",
-        rr.Arrows3D(
-            origins=[[0, 0, 0]] * 3,
-            vectors=(np.eye(3) * axis_length_mm).tolist(),
-            colors=_AXIS_COLORS,
-            labels=[f"{frame_label}_X", f"{frame_label}_Y", f"{frame_label}_Z"],
-        ),
-        static=True,
-    )
-    if with_origin:
-        rr.log(
-            f"{entity}/origin",
-            rr.Points3D(
-                [[0, 0, 0]],
-                colors=[list(origin_color)],
-                radii=[origin_radius],
-                labels=[frame_label],
-            ),
-            static=True,
-        )
-
-
-def _log_debug_link(
-    entity: str,
-    p_from_cam1: np.ndarray,
-    p_to_cam1: np.ndarray,
-    color: tuple[int, int, int] = (160, 160, 160),
-) -> None:
-    """cam1 좌표계 두 점을 잇는 회색 선분 (frame 간 상대 배치 가늠용)."""
-    import rerun as rr
-
-    rr.log(
-        entity,
-        rr.LineStrips3D(
-            [[p_from_cam1.tolist(), p_to_cam1.tolist()]],
-            colors=[list(color)],
-            radii=[0.5],
-        ),
-        static=True,
-    )
-
-
-def _log_base_raw(
-    entity: str,
-    M_base_to_cam1: np.ndarray,
-    *,
-    axis_length_mm: float,
-    frame_label: str = "BASE_RAW",
-) -> None:
-    """``rigid_transform_kit`` 을 우회해 원시 Rerun API로 base frame 로그.
-
-    Rerun Transform3D 는 parent-from-child 이므로, entity parent 가 ``world/scene`` (=cam1)
-    이면 ``p_cam1 = M @ p_base`` 인 M 을 **그대로** 넣으면 된다. 기존 ``vis.log_transform``
-    결과와 이 결과가 겹치면 frame 선언이 올바르다는 sanity check 가 된다.
-    """
-    import rerun as rr
-
-    R_bc = M_base_to_cam1[:3, :3]
-    t_bc = M_base_to_cam1[:3, 3]
-    quat_bc = Rotation.from_matrix(R_bc).as_quat().tolist()  # xyzw
-
-    rr.log(
-        entity,
-        rr.Transform3D(
-            translation=t_bc.tolist(),
-            quaternion=rr.Quaternion(xyzw=quat_bc),
-        ),
-        static=True,
-    )
-    _log_frame_axes(
-        entity,
-        axis_length_mm=axis_length_mm,
-        frame_label=frame_label,
-        origin_color=(255, 80, 255),  # magenta: raw 용 (기존 base 와 구별)
-    )
-
-
-# ---------------------------------------------------------------------------
-# 기존 IO 헬퍼
-# ---------------------------------------------------------------------------
 def _load_4x4_from_yaml(path: Path) -> np.ndarray:
     """Load 4x4 ``cam1_to_cam2`` (or ``cam2_pose_matrix``, ``T_cam1_cam2``) from YAML."""
     if not path.exists():
@@ -486,14 +344,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="YAML 4x4가 cam→base (p_base=M p_cam)일 때: inv(M)으로 base→cam으로 바꿔 로그",
     )
-    p.add_argument(
-        "--base-axis-mm",
-        type=float,
-        default=250.0,
-        metavar="MM",
-        help="Axis arrow length for robot base frame in 3D view (mm). Default 250",
-    )
-    # -- TCP pose from PLY filename (Fanuc WPR, same as visualize_pallet_box --tool-rotation) --
+    # -- TCP pose from PLY filename --
     p.add_argument(
         "--tcp-from-ply-name",
         action=argparse.BooleanOptionalAction,
@@ -513,66 +364,125 @@ def parse_args() -> argparse.Namespace:
         metavar="MM",
         help="TCP axis arrow length in mm for tcp_from_filename (default 120).",
     )
-    # -- Debug visualization -------------------------------------------------
-    p.add_argument(
-        "--no-debug-axes",
-        action="store_true",
-        help="Disable per-frame axes with labels (default: axes ON for all frames)",
-    )
-    p.add_argument(
-        "--no-debug-origins",
-        action="store_true",
-        help="Disable origin sphere markers at each frame",
-    )
-    p.add_argument(
-        "--no-debug-links",
-        action="store_true",
-        help="Disable gray link lines between cam1 origin and other frame origins",
-    )
-    p.add_argument(
-        "--raw-base-transform",
-        action="store_true",
-        help="Also log base frame via raw Rerun API (world/scene/robot_base_raw) — sanity check for rigid_transform_kit",
-    )
     return p.parse_args()
 
 
 
-parse_tcp_vec6_from_ply_filename = parse_tcp_vec6_from_filename
+def _maybe_log_tcp(
+    vis: TransformVisualizer,
+    args: argparse.Namespace,
+    M_base_to_cam1: np.ndarray | None,
+) -> None:
+    """Parse TCP vec6 from PLY filename and log it in cam1 frame."""
+    vec6 = parse_tcp_vec6_from_filename(args.cam1_ply)
+    if vec6 is None:
+        log.info("TCP: stem %r not parseable — skip.", args.cam1_ply.stem)
+        return
+
+    log.info("TCP vec6: %s (mm, deg)", np.round(vec6, 3).tolist())
+
+    if args.tcp_pose_frame == "cam1":
+        T_cam_tcp = RigidTransform.from_vec6(
+            vec6, Frame.CAMERA, Frame.TCP, convention="xyz", degrees=True,
+        )
+    else:
+        T_base_tcp = RigidTransform.from_vec6(
+            vec6, Frame.BASE, Frame.TCP, convention="xyz", degrees=True,
+        )
+        if M_base_to_cam1 is None:
+            log.warning("TCP (base frame): base_to_cam not available — skip.")
+            return
+        T_cam_tcp = RigidTransform.from_matrix(
+            M_base_to_cam1 @ T_base_tcp.matrix, Frame.CAMERA, Frame.TCP,
+        )
+
+    ax = args.tcp_pose_axis_mm
+    vis.log_tcp_pose(
+        T_cam_tcp, parent_path="world/scene", label="tcp",
+        axis_length=ax, arrow_radius=max(2.0, ax * 0.04), show_axes=True,
+    )
+    log.info("Logged world/scene/tcp (frame=%s).", args.tcp_pose_frame)
 
 
-def _maybe_subsample(pts: np.ndarray, colors: np.ndarray | None, max_n: int) -> tuple[np.ndarray, np.ndarray | None]:
-    if max_n <= 0 or pts.shape[0] <= max_n:
-        return pts, colors
-    rng = np.random.default_rng(0)
-    idx = rng.choice(pts.shape[0], size=max_n, replace=False)
-    c2 = colors[idx] if colors is not None else None
-    return pts[idx], c2
+def _log_cam_frame(
+    entity: str,
+    pts_mm: np.ndarray,
+    colors: np.ndarray,
+    label: str,
+    origin_color: tuple[int, int, int],
+    transform_args: tuple[list, list] | None = None,
+) -> None:
+    """Log axes + origin + pcd + frustum for one camera entity."""
+    import rerun as rr
+
+    if transform_args is not None:
+        t_list, quat_xyzw = transform_args
+        rr.log(entity, rr.Transform3D(
+            translation=t_list, quaternion=rr.Quaternion(xyzw=quat_xyzw),
+        ), static=True)
+
+    rr.log(
+        f"{entity}/axes",
+        rr.Arrows3D(
+            origins=[[0, 0, 0]] * 3,
+            vectors=(np.eye(3) * 80.0).tolist(),
+            colors=_AXIS_COLORS,
+            labels=[f"{label}_X", f"{label}_Y", f"{label}_Z"],
+        ),
+        static=True,
+    )
+    log_origin_spheres([(f"{entity}/origin", np.zeros(3), origin_color, label)])
+    rr.log(f"{entity}/pcd", rr.Points3D(pts_mm, colors=colors, radii=[1.2]), static=True)
+    log_camera_frustum(f"{entity}/frustum", image_plane_distance=90.0)
+
+
+def _log_cam_rgb(
+    cam_name: str,
+    rgb_path: Path,
+    intrinsic_json: Path,
+    plane_3d: float,
+    plane_2d: float,
+    transform_args: tuple[list, list] | None = None,
+) -> list[tuple[str, str]]:
+    """Log RGB Pinhole for one camera. Returns 2D tab entries for blueprint."""
+    import rerun as rr
+
+    tabs: list[tuple[str, str]] = []
+    entity_3d = f"world/scene/{cam_name}_rgb"
+    entity_2d = f"rerun_2d/{cam_name}"
+
+    if transform_args is not None:
+        t_list, quat_xyzw = transform_args
+        rr.log(entity_3d, rr.Transform3D(
+            translation=t_list, quaternion=rr.Quaternion(xyzw=quat_xyzw),
+        ), static=True)
+
+    rgb_hwc = _load_rgb_hwc(rgb_path)
+    _log_rgb_pinhole(entity_3d, rgb_path, intrinsic_json,
+                     image_plane_mm=plane_3d, rgb_hwc=rgb_hwc)
+    if rgb_hwc is not None:
+        if _log_rgb_pinhole(entity_2d, rgb_path, intrinsic_json,
+                            image_plane_mm=plane_2d, rgb_hwc=rgb_hwc):
+            tabs.append((f"{cam_name.upper()} RGB", entity_2d))
+    return tabs
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = parse_args()
 
-    # debug 옵션 (기본 ON, --no-* 로 off)
-    debug_axes = not args.no_debug_axes
-    debug_origins = not args.no_debug_origins
-    debug_links = not args.no_debug_links
-
     T_cam1_to_cam2 = _load_4x4_from_yaml(args.extrinsic)
-    T = np.linalg.inv(T_cam1_to_cam2)  # cam2→cam1: p_cam1 = T @ p_cam2
-    R = T[:3, :3]
-    t = T[:3, 3]
-    quat_xyzw = Rotation.from_matrix(R).as_quat().tolist()
+    T_cam2_to_cam1 = np.linalg.inv(T_cam1_to_cam2)
+    t = T_cam2_to_cam1[:3, 3]
+    quat_xyzw = Rotation.from_matrix(T_cam2_to_cam1[:3, :3]).as_quat().tolist()
 
-    # extrinsic YAML 안에 base_to_cam1 키가 있으면 사용, 없으면 스킵
-    # base_to_cam1: p_cam1 = M @ p_base (base 점을 cam1으로 보냄)
-    M_base_to_cam1_from_extrinsic: np.ndarray | None = None
+    M_base_to_cam1: np.ndarray | None = None
     if not args.no_robot_base:
-        M_base_to_cam1_from_extrinsic = _try_load_base_to_cam1(args.extrinsic)
-        if M_base_to_cam1_from_extrinsic is not None:
-            log.info("Loaded base_to_cam1 from extrinsic YAML: %s", args.extrinsic)
+        M_base_to_cam1 = _try_load_base_to_cam1(args.extrinsic)
+        if M_base_to_cam1 is not None:
+            log.info("Loaded base_to_cam1 from %s", args.extrinsic)
 
+    # ── Load & preprocess PLY ──
     ply1 = load_ply_points(args.cam1_ply)
     ply2 = load_ply_points(args.cam2_ply)
     if ply1 is None:
@@ -584,332 +494,87 @@ def main() -> None:
     pts2_m, col2 = ply2
 
     if not args.no_depth_clip:
-        n1, n2 = len(pts1_m), len(pts2_m)
         pts1_m, col1 = clip_depth_range(
-            pts1_m,
-            args.depth_min_m,
-            args.depth_max_m,
-            depth_axis=args.depth_axis,
-            colors=col1,
+            pts1_m, args.depth_min_m, args.depth_max_m,
+            depth_axis=args.depth_axis, colors=col1,
         )
         pts2_m, col2 = clip_depth_range(
-            pts2_m,
-            args.depth_min_m,
-            args.depth_max_m,
-            depth_axis=args.depth_axis,
-            colors=col2,
-        )
-        log.info(
-            "Depth clip [%.3f, %.3f] m (axis=%d): cam1 %d -> %d, cam2 %d -> %d",
-            args.depth_min_m,
-            args.depth_max_m,
-            args.depth_axis,
-            n1,
-            len(pts1_m),
-            n2,
-            len(pts2_m),
+            pts2_m, args.depth_min_m, args.depth_max_m,
+            depth_axis=args.depth_axis, colors=col2,
         )
 
     pts1_mm = pts1_m * 1000.0
     pts2_mm = pts2_m * 1000.0
 
+    _DEFAULT_COLORS = {
+        "cam1": np.array([[255, 120, 40]], dtype=np.uint8),
+        "cam2": np.array([[40, 180, 255]], dtype=np.uint8),
+    }
     if col1 is None:
-        col1 = np.tile(np.array([[255, 120, 40]], dtype=np.uint8), (len(pts1_mm), 1))
+        col1 = np.tile(_DEFAULT_COLORS["cam1"], (len(pts1_mm), 1))
     if col2 is None:
-        col2 = np.tile(np.array([[40, 180, 255]], dtype=np.uint8), (len(pts2_mm), 1))
+        col2 = np.tile(_DEFAULT_COLORS["cam2"], (len(pts2_mm), 1))
 
-    pts1_mm, col1 = _maybe_subsample(pts1_mm, col1, args.max_points)
-    pts2_mm, col2 = _maybe_subsample(pts2_mm, col2, args.max_points)
+    pts1_mm, col1 = subsample(pts1_mm, col1, args.max_points)
+    pts2_mm, col2 = subsample(pts2_mm, col2, args.max_points)
 
+    # ── Rerun setup ──
     save_path = args.save
     spawn = save_path is None
     if save_path is not None:
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        log.info("Saving to %s (spawn disabled).", save_path)
-
-    log.info(
-        "Unified camera 1 frame: cam1 PLY as-is, cam2 via extrinsic, robot_base via base_to_cam. "
-        "--cam1-ply=%s (PLY must be in cam1 coords).",
-        args.cam1_ply,
-    )
 
     vis = TransformVisualizer(
-        "multi_eye_view",
-        spawn=spawn,
-        port=args.port,
+        "multi_eye_view", spawn=spawn, port=args.port,
         views=[("Stereo (camera 1)", "world/scene")],
     )
-    import rerun as rr
 
-    # ------------------------------------------------------------------
-    # Robot base (cam1 좌표계)
-    # ------------------------------------------------------------------
-    M_base_to_cam1: np.ndarray | None = M_base_to_cam1_from_extrinsic
+    # ── Robot base ──
     if M_base_to_cam1 is not None:
         if args.invert_base_calibration:
             M_base_to_cam1 = np.linalg.inv(M_base_to_cam1)
-            log.info("Using inv(base matrix): YAML treated as cam→base, inverted to base→cam1.")
-        # base_to_cam1: p_cam1 = M @ p_base → from=CAMERA, to=BASE
         T_base_to_cam1 = RigidTransform.from_matrix(M_base_to_cam1, Frame.CAMERA, Frame.BASE)
-        vis.log_transform(
-            "world/scene/robot_base",
-            T_base_to_cam1,
-            axis_length=300.0,
-            label="ROBOT_BASE",
-        )
-        log.info("Logged robot base in camera 1 frame from %s", args.extrinsic)
+        vis.log_transform("world/scene/robot_base", T_base_to_cam1,
+                          axis_length=300.0, label="ROBOT_BASE")
+        log_origin_spheres([
+            ("world/scene/robot_base/origin", np.zeros(3), (255, 255, 0), "BASE"),
+        ])
 
-        # 디버그: base frame 에 라벨 달린 축 + 원점 sphere 추가
-        if debug_axes:
-            _log_frame_axes(
-                "world/scene/robot_base",
-                axis_length_mm=300.0,
-                frame_label="BASE",
-                origin_color=(255, 255, 0),  # yellow
-                origin_radius=12.0,
-                with_origin=debug_origins,
-            )
+    # ── Cam1 / Cam2 (axes + pcd + frustum) ──
+    cam2_tf = (t.tolist(), quat_xyzw)
+    _log_cam_frame("world/scene/cam1", pts1_mm, col1,
+                   "CAM1", (255, 80, 80), transform_args=None)
+    _log_cam_frame("world/scene/cam2", pts2_mm, col2,
+                   "CAM2", (80, 180, 255), transform_args=cam2_tf)
 
-        # 디버그: rigid_transform_kit 우회한 raw 버전도 같이 찍어 sanity check
-        if args.raw_base_transform:
-            _log_base_raw(
-                "world/scene/robot_base_raw",
-                M_base_to_cam1,
-                axis_length_mm=210.0,
-                frame_label="BASE_RAW",
-            )
-            log.info(
-                "Raw base transform also logged at world/scene/robot_base_raw "
-                "(should visually coincide with world/scene/robot_base)"
-            )
+    # ── Debug links ──
+    cam1_origin = np.zeros(3)
+    log_debug_link("world/scene/_debug/cam1_to_cam2", cam1_origin, t,
+                   color=(140, 140, 200))
+    if M_base_to_cam1 is not None:
+        log_debug_link("world/scene/_debug/cam1_to_base", cam1_origin,
+                       M_base_to_cam1[:3, 3], color=(200, 200, 120))
 
-    # ------------------------------------------------------------------
-    # Cam1 (world/scene 와 동일 좌표계)
-    # ------------------------------------------------------------------
-    axis_mm = 80.0
-    if debug_axes:
-        # 라벨 포함 버전 (디버그용) — 축 색은 기존과 동일 RGB
-        _log_frame_axes(
-            "world/scene/cam1",
-            axis_length_mm=axis_mm,
-            frame_label="CAM1",
-            origin_color=(255, 80, 80),  # reddish
-            origin_radius=8.0,
-            with_origin=debug_origins,
-        )
-    else:
-        # 기존 코드 유지 (라벨 없이)
-        rr.log(
-            "world/scene/cam1/axes",
-            rr.Arrows3D(
-                origins=[[0, 0, 0]] * 3,
-                vectors=(np.eye(3) * axis_mm).tolist(),
-                colors=[[220, 40, 40], [40, 220, 40], [40, 80, 220]],
-                labels=["cam1 X", "cam1 Y", "cam1 Z"],
-            ),
-            static=True,
-        )
-    rr.log("world/scene/cam1/pcd", rr.Points3D(pts1_mm, colors=col1, radii=[1.2]), static=True)
-
-    # ------------------------------------------------------------------
-    # Cam2 (cam1 좌표계에 extrinsic 으로 배치)
-    # ------------------------------------------------------------------
-    rr.log(
-        "world/scene/cam2",
-        rr.Transform3D(translation=t.tolist(), quaternion=rr.Quaternion(xyzw=quat_xyzw)),
-        static=True,
-    )
-    if debug_axes:
-        _log_frame_axes(
-            "world/scene/cam2",
-            axis_length_mm=axis_mm,
-            frame_label="CAM2",
-            origin_color=(80, 180, 255),  # bluish
-            origin_radius=8.0,
-            with_origin=debug_origins,
-        )
-    else:
-        rr.log(
-            "world/scene/cam2/axes",
-            rr.Arrows3D(
-                origins=[[0, 0, 0]] * 3,
-                vectors=(np.eye(3) * axis_mm).tolist(),
-                colors=[[220, 40, 40], [40, 220, 40], [40, 80, 220]],
-                labels=["cam2 X", "cam2 Y", "cam2 Z"],
-            ),
-            static=True,
-        )
-    rr.log("world/scene/cam2/pcd", rr.Points3D(pts2_mm, colors=col2, radii=[1.2]), static=True)
-
-    # ------------------------------------------------------------------
-    # 디버그: cam1 ↔ cam2 / cam1 ↔ base 연결선 (상대 배치 한눈에)
-    # ------------------------------------------------------------------
-    if debug_links:
-        cam1_origin_in_cam1 = np.zeros(3)
-        cam2_origin_in_cam1 = t  # T[:3, 3] 이 cam1 좌표계 상의 cam2 원점
-        _log_debug_link(
-            "world/scene/_debug/cam1_to_cam2",
-            cam1_origin_in_cam1,
-            cam2_origin_in_cam1,
-            color=(140, 140, 200),
-        )
-        log.info(
-            "cam1→cam2 link: translation %s mm (|t|=%.1f mm)",
-            np.round(t, 2).tolist(),
-            float(np.linalg.norm(t)),
-        )
-        if M_base_to_cam1 is not None:
-            base_origin_in_cam1 = M_base_to_cam1[:3, 3]
-            _log_debug_link(
-                "world/scene/_debug/cam1_to_base",
-                cam1_origin_in_cam1,
-                base_origin_in_cam1,
-                color=(200, 200, 120),
-            )
-            log.info(
-                "cam1→base link: translation %s mm (|t|=%.1f mm)",
-                np.round(base_origin_in_cam1, 2).tolist(),
-                float(np.linalg.norm(base_origin_in_cam1)),
-            )
-
-    # ------------------------------------------------------------------
-    # TCP pose from PLY filename: stem [idx_]_x_y_z_W_P_R (mm, Fanuc xyz WPR deg)
-    # Same convention as examples/visualize_pallet_box.py --tool-rotation.
-    # ------------------------------------------------------------------
+    # ── TCP ──
     if args.tcp_from_ply_name:
-        vec6 = parse_tcp_vec6_from_ply_filename(args.cam1_ply)
-        if vec6 is None:
-            log.info(
-                "TCP from filename: stem %r is not [idx_]_x_y_z_W_P_R — skip.",
-                args.cam1_ply.stem,
-            )
-        else:
-            log.info(
-                "TCP from filename: [x,y,z,W,P,R] = %s (mm, deg)",
-                np.round(vec6, 3).tolist(),
-            )
-            if args.tcp_pose_frame == "cam1":
-                T_cam_tcp = RigidTransform.from_vec6(
-                    vec6, Frame.CAMERA, Frame.TCP, convention="xyz", degrees=True
-                )
-            else:
-                T_base_tcp = RigidTransform.from_vec6(
-                    vec6, Frame.BASE, Frame.TCP, convention="xyz", degrees=True
-                )
-                if M_base_to_cam1 is None:
-                    log.warning(
-                        "TCP (--tcp-pose-frame=base): need base_to_cam; skip. "
-                        "Use --tcp-pose-frame=cam1 or provide --base-calibration."
-                    )
-                    T_cam_tcp = None
-                else:
-                    T_cam_tcp = RigidTransform.from_matrix(
-                        M_base_to_cam1 @ T_base_tcp.matrix,
-                        Frame.CAMERA,
-                        Frame.TCP,
-                    )
-            if T_cam_tcp is not None:
-                vis.log_tcp_pose(
-                    T_cam_tcp,
-                    parent_path="world/scene",
-                    label="tcp",
-                    axis_length=args.tcp_pose_axis_mm,
-                    arrow_radius=max(2.0, args.tcp_pose_axis_mm * 0.04),
-                    show_axes=True,
-                )
-                log.info(
-                    "Logged world/scene/tcp (cam1 frame, --tcp-pose-frame=%s).",
-                    args.tcp_pose_frame,
-                )
+        _maybe_log_tcp(vis, args, M_base_to_cam1)
 
-    # ------------------------------------------------------------------
-    # RGB pinhole
-    # ------------------------------------------------------------------
-    # Rerun rule: Pinhole entity is the root of a 2D subspace. Its entity MUST NOT have
-    # 3D siblings under it (Arrows3D, Points3D), otherwise the subspace is ambiguous and
-    # you get "The pinhole's child frame ... does not form the root of a 2D subspace" warnings.
-    # Solution: give each Pinhole its OWN dedicated entity that is a SIBLING of the 3D cam
-    # entity (not a child), and put ONLY 2D content under it (Image).
-    #
-    #   world/scene/cam1        ← 3D only (axes, pcd, origin)
-    #   world/scene/cam1_rgb    ← Pinhole + Image only  (same frame as cam1)
-    #   world/scene/cam2        ← Transform3D + 3D (axes, pcd, origin)
-    #   world/scene/cam2_rgb    ← same Transform3D + Pinhole + Image only
+    # ── RGB Pinhole ──
+    # Pinhole 은 3D entity 와 분리된 sibling entity 에 둬야 Rerun 2D subspace 규칙 충족.
     rgb_tabs: list[tuple[str, str]] = []
     if not args.no_rgb:
-        # --- CAM1 ---
-        # cam1 shares world/scene frame (no Transform3D), so cam1_rgb needs no Transform3D either.
-        c1_rgb = _load_rgb_hwc(args.cam1_rgb)
-        if c1_rgb is not None:
-            _log_rgb_pinhole(
-                "world/scene/cam1_rgb",
-                args.cam1_rgb,
-                args.cam1_intrinsics,
-                image_plane_mm=args.image_plane_mm_3d,
-                rgb_hwc=c1_rgb,
-            )
-            if _log_rgb_pinhole(
-                "rerun_2d/cam1",
-                args.cam1_rgb,
-                args.cam1_intrinsics,
-                image_plane_mm=args.image_plane_mm_2d,
-                rgb_hwc=c1_rgb,
-            ):
-                rgb_tabs.append(("Cam1 RGB", "rerun_2d/cam1"))
-        else:
-            _log_rgb_pinhole(
-                "world/scene/cam1_rgb",
-                args.cam1_rgb,
-                args.cam1_intrinsics,
-                image_plane_mm=args.image_plane_mm_3d,
-            )
-
-        # --- CAM2 ---
-        # cam2_rgb needs its own Transform3D (same as cam2) so that the frustum sits at the
-        # cam2 pose inside world/scene.
-        c2_rgb = _load_rgb_hwc(args.cam2_rgb)
-        rgb2_exists = args.cam2_rgb.exists() and args.cam2_intrinsics.exists()
-        if rgb2_exists:
-            rr.log(
-                "world/scene/cam2_rgb",
-                rr.Transform3D(
-                    translation=t.tolist(),
-                    quaternion=rr.Quaternion(xyzw=quat_xyzw),
-                ),
-                static=True,
-            )
-            if c2_rgb is not None:
-                _log_rgb_pinhole(
-                    "world/scene/cam2_rgb",
-                    args.cam2_rgb,
-                    args.cam2_intrinsics,
-                    image_plane_mm=args.image_plane_mm_3d,
-                    rgb_hwc=c2_rgb,
-                )
-                if _log_rgb_pinhole(
-                    "rerun_2d/cam2",
-                    args.cam2_rgb,
-                    args.cam2_intrinsics,
-                    image_plane_mm=args.image_plane_mm_2d,
-                    rgb_hwc=c2_rgb,
-                ):
-                    rgb_tabs.append(("Cam2 RGB", "rerun_2d/cam2"))
-            else:
-                _log_rgb_pinhole(
-                    "world/scene/cam2_rgb",
-                    args.cam2_rgb,
-                    args.cam2_intrinsics,
-                    image_plane_mm=args.image_plane_mm_3d,
-                )
+        rgb_tabs += _log_cam_rgb(
+            "cam1", args.cam1_rgb, args.cam1_intrinsics,
+            args.image_plane_mm_3d, args.image_plane_mm_2d,
+        )
+        rgb_tabs += _log_cam_rgb(
+            "cam2", args.cam2_rgb, args.cam2_intrinsics,
+            args.image_plane_mm_3d, args.image_plane_mm_2d,
+            transform_args=cam2_tf,
+        )
 
     _send_stereo_blueprint(rgb_tab_origins=rgb_tabs)
-
-    log.info(
-        "Logged cam1=%d pts, cam2=%d pts (cam2 frame under Transform; units mm).",
-        len(pts1_mm),
-        len(pts2_mm),
-    )
-
+    log.info("Logged cam1=%d pts, cam2=%d pts.", len(pts1_mm), len(pts2_mm))
     finalize_viewer(save_path, spawn=spawn, app_name="Stereo (camera 1)")
 
 
