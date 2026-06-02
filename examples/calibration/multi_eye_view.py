@@ -210,6 +210,7 @@ def _send_stereo_blueprint(*, rgb_tab_origins: list[tuple[str, str]]) -> None:
             name="Stereo (camera 1)",
             origin="world/scene",
             contents=["+ world/scene/**"],
+            line_grid=False,
         ),
     ]
     for title, origin in rgb_tab_origins:

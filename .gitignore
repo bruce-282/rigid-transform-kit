@@ -35,3 +35,8 @@ datasets/multi_eye_example/*.rrd
 datasets/hand_eye_example/*.rrd
 !datasets/fixed_eye_example/
 datasets/fixed_eye_example/*.rrd
+!datasets/0518_JG_Swing_LH_raw_zig/
+datasets/0518_JG_Swing_LH_raw_zig/*.rrd
+datasets/0518_JG_Swing_LH_raw_zig/*.ply
+datasets/0518_JG_Swing_LH_raw_zig/*.png
+datasets/0518_JG_Swing_LH_raw_zig/*.tif

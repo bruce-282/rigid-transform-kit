@@ -132,7 +132,12 @@ class TransformVisualizer:
         import rerun.blueprint as rrb
 
         tabs = [
-            rrb.Spatial3DView(name=name, origin=origin, contents=[f"+ {origin}/**"])
+            rrb.Spatial3DView(
+                name=name,
+                origin=origin,
+                contents=[f"+ {origin}/**"],
+                line_grid=False,
+            )
             for name, origin in views
         ]
         tabs.append(
