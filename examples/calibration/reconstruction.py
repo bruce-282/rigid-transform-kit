@@ -4,10 +4,15 @@ examples / calibration / reconstruction.py
 다중 프레임 PLY를 ``global_poses.yaml`` 의 ``global_pose`` 로 **글로벌 좌표계**에
 맞춰 Rerun 으로 시각화합니다 (``multi_eye_view`` 와 동일한 씬 패턴).
 
-* 각 프레임: PLY 로드 → ``p_global = global_pose @ p_local`` (행렬로 점 변환 후 로그).
+* 각 프레임: PLY 샘플링 → ``p_global = global_pose @ p_local`` (행렬로 점 변환 후 로그).
 * 프레임 축: ``Transform3D(global_pose)`` 로 표시 (RGB Pinhole 이 카메라 뷰).
 * 기준 프레임: ``global_pose`` 가 단위행렬인 프레임 (예: ``frame_3``) = 글로벌 원점.
-* RGB: ``N.png`` 를 프레임별 3D Pinhole + 2D 카메라 탭에 표시 (인트린식 JSON 없으면 이미지 크기로 추정).
+* ``world/scene/frame_*`` — 축·프레임 pose만.
+* ``world/pcd/frame_*`` — 글로벌 좌표 점군 (``merged`` 선택).
+* ``world/rgb/frame_*`` — 3D Pinhole + 2D ``rerun_2d/01`` …
+* ``world/_debug/`` — 프레임 간 연결선.
+* ``world/mesh/scene_mesh`` — ``scene_mesh.ply`` 정점 샘플링 (Points3D).
+* 프레임 PLY — 무효점 제거 후 **랜덤 샘플링** (기본 8만 점/프레임).
 
 Usage::
 
@@ -204,8 +209,13 @@ def _log_rgb_pinhole_hwc(
     *,
     image_plane_mm: float,
     focal_length: float | None = None,
+    static: bool = True,
 ) -> None:
-    """Pinhole + Image from RGB array (no intrinsics JSON)."""
+    """Pinhole + Image from RGB array (no intrinsics JSON).
+
+    ``static=False`` logs the Image on the active timeline (sequential mode);
+    ViewCoordinates / Pinhole stay static (constant intrinsics).
+    """
     import rerun as rr
 
     h, w = rgb_hwc.shape[:2]
@@ -214,7 +224,7 @@ def _log_rgb_pinhole_hwc(
     fx = fy = focal_length
     cx, cy = w / 2.0, h / 2.0
 
-    rr.log(entity_path, rr.ViewCoordinates.RDF, static=True)
+    rr.log(entity_path, rr.ViewCoordinates.RDF, static=static)
     rr.log(
         entity_path,
         rr.Pinhole(
@@ -224,9 +234,9 @@ def _log_rgb_pinhole_hwc(
             height=h,
             image_plane_distance=float(image_plane_mm),
         ),
-        static=True,
+        static=static,
     )
-    rr.log(entity_path, rr.Image(rgb_hwc), static=True)
+    rr.log(entity_path, rr.Image(rgb_hwc), static=static)
 
 
 def _log_rgb_pinhole_json(
@@ -235,6 +245,7 @@ def _log_rgb_pinhole_json(
     intrinsic_json: Path,
     *,
     image_plane_mm: float,
+    static: bool = True,
 ) -> bool:
     """Pinhole + Image using intrinsics JSON (multi_eye_view style)."""
     import rerun as rr
@@ -244,7 +255,7 @@ def _log_rgb_pinhole_json(
     cx, cy = float(K[0, 2]), float(K[1, 2])
     w, h = _read_image_resolution_json(intrinsic_json)
 
-    rr.log(entity_path, rr.ViewCoordinates.RDF, static=True)
+    rr.log(entity_path, rr.ViewCoordinates.RDF, static=static)
     rr.log(
         entity_path,
         rr.Pinhole(
@@ -254,9 +265,9 @@ def _log_rgb_pinhole_json(
             height=h,
             image_plane_distance=float(image_plane_mm),
         ),
-        static=True,
+        static=static,
     )
-    rr.log(entity_path, rr.Image(rgb_hwc), static=True)
+    rr.log(entity_path, rr.Image(rgb_hwc), static=static)
     return True
 
 
@@ -279,28 +290,28 @@ def _resolve_intrinsics_json(
 
 def _log_frame_rgb(
     frame_key: str,
+    frame_num: int,
     rgb_path: Path,
     M: np.ndarray,
     *,
     plane_3d: float,
     plane_2d: float,
     intrinsic_json: Path | None,
-) -> list[tuple[str, str]]:
-    """Log RGB at frame pose (3D) + flat 2D tab. Returns blueprint tab entries."""
+) -> bool:
+    """Log RGB: 3D at frame pose + 2D under ``rerun_2d/{num:02d}`` (tree pick)."""
     import rerun as rr
 
     if not rgb_path.exists():
         log.warning("RGB not found, skip: %s", rgb_path)
-        return []
+        return False
 
     rgb_hwc = _load_rgb_hwc(rgb_path)
     if rgb_hwc is None:
         log.warning("Failed to read RGB: %s", rgb_path)
-        return []
+        return False
 
-    tabs: list[tuple[str, str]] = []
-    entity_3d = f"world/scene/{frame_key}_rgb"
-    entity_2d = f"rerun_2d/{frame_key}"
+    entity_3d = f"world/rgb/{frame_key}"
+    entity_2d = f"rerun_2d/{frame_num:02d}"
     tf_args = None if np.allclose(M, np.eye(4)) else _matrix_to_transform_args(M)
 
     if tf_args is not None:
@@ -316,38 +327,292 @@ def _log_frame_rgb(
 
     if intrinsic_json is not None and intrinsic_json.exists():
         _log_rgb_pinhole_json(entity_3d, rgb_hwc, intrinsic_json, image_plane_mm=plane_3d)
-        if _log_rgb_pinhole_json(entity_2d, rgb_hwc, intrinsic_json, image_plane_mm=plane_2d):
-            tabs.append((f"{frame_key} RGB", entity_2d))
+        _log_rgb_pinhole_json(entity_2d, rgb_hwc, intrinsic_json, image_plane_mm=plane_2d)
     else:
         _log_rgb_pinhole_hwc(entity_3d, rgb_hwc, image_plane_mm=plane_3d)
         _log_rgb_pinhole_hwc(entity_2d, rgb_hwc, image_plane_mm=plane_2d)
-        tabs.append((f"{frame_key} RGB", entity_2d))
 
     log.info("Logged RGB %s -> %s, %s", rgb_path.name, entity_3d, entity_2d)
-    return tabs
+    return True
 
 
-def _send_reconstruction_blueprint(*, rgb_tab_origins: list[tuple[str, str]]) -> None:
+def _log_scene_mesh(
+    mesh_path: Path,
+    *,
+    max_points: int = 150_000,
+) -> bool:
+    """Log ``scene_mesh.ply`` as sampled Points3D at ``world/mesh/scene_mesh``."""
+    import rerun as rr
+
+    try:
+        import open3d as o3d
+    except ImportError:
+        log.warning("open3d required for scene mesh")
+        return False
+
+    if not mesh_path.exists():
+        return False
+
+    log.info("Loading scene mesh %s (sampled points)...", mesh_path.name)
+    mesh = o3d.io.read_triangle_mesh(str(mesh_path))
+    if mesh.is_empty():
+        log.warning("Scene mesh empty: %s", mesh_path)
+        return False
+
+    verts = _ply_array_to_scene_mm(np.asarray(mesh.vertices, dtype=np.float64))
+    colors: np.ndarray | None = None
+    if mesh.has_vertex_colors():
+        c = np.asarray(mesh.vertex_colors, dtype=np.float64)
+        colors = (np.clip(c, 0, 1) * 255).astype(np.uint8)
+
+    n_verts = len(verts)
+    verts, colors = subsample(verts, colors, max_points)
+    log.info("  scene_mesh: %d -> %d verts", n_verts, len(verts))
+
+    rr.log(
+        "world/mesh/scene_mesh",
+        rr.Points3D(verts, colors=colors, radii=[0.8]),
+        static=True,
+    )
+    return True
+
+
+def _send_reconstruction_blueprint(*, include_rgb_tab: bool) -> None:
+    """3D + optional single 2D tab (프레임마다 탭을 만들지 않음 — 24탭이면 UI에서 누락됨)."""
     import rerun as rr
     import rerun.blueprint as rrb
 
     tabs: list = [
         rrb.Spatial3DView(
             name="Reconstruction (global)",
-            origin="world/scene",
-            contents=["+ world/scene/**"],
+            origin="world",
+            contents=[
+                "+ world/scene/**",
+                "+ world/pcd/**",
+                "+ world/rgb/**",
+                "+ world/mesh/**",
+                "+ world/_debug/**",
+            ],
             line_grid=False,
         ),
     ]
-    for title, origin in rgb_tab_origins:
+    if include_rgb_tab:
         tabs.append(
             rrb.Spatial2DView(
-                name=title,
-                origin=origin,
-                contents=[f"+ {origin}", f"+ {origin}/**"],
+                name="Camera images",
+                origin="rerun_2d",
+                contents=["+ rerun_2d/**"],
             )
         )
     rr.send_blueprint(rrb.Blueprint(rrb.Tabs(*tabs)))
+
+
+def _order_entries_nearest(entries: list) -> list:
+    """Greedy nearest-neighbor chain by camera translation (mm).
+
+    파일 번호 순서 대신 **공간상 가장 가까운 프레임**을 차례로 이어 붙여
+    인접 프레임끼리 부드럽게 진행되도록 재정렬합니다. 시작점은 기준 프레임
+    (global_pose == identity) 이 있으면 그것, 없으면 첫 항목.
+    """
+    if len(entries) <= 2:
+        return list(entries)
+
+    remaining = list(entries)
+    start_idx = 0
+    for j, e in enumerate(remaining):
+        if np.allclose(e.global_pose, np.eye(4)):
+            start_idx = j
+            break
+    ordered = [remaining.pop(start_idx)]
+    while remaining:
+        last_t = ordered[-1].global_pose[:3, 3]
+        k = int(np.argmin([
+            float(np.linalg.norm(e.global_pose[:3, 3] - last_t)) for e in remaining
+        ]))
+        ordered.append(remaining.pop(k))
+    return ordered
+
+
+def _order_entries(entries: list, mode: str) -> list:
+    """Order frames for sequential playback: ``file`` (numeric) or ``nearest``."""
+    if mode == "nearest":
+        return _order_entries_nearest(entries)
+    return list(entries)
+
+
+def _send_sequential_blueprint(*, include_rgb_tab: bool, include_snr_tab: bool = False) -> None:
+    """Sequential playback: single moving camera + current-frame PCD over a timeline."""
+    import rerun as rr
+    import rerun.blueprint as rrb
+
+    tabs: list = [
+        rrb.Spatial3DView(
+            name="Sequential (global)",
+            origin="world",
+            contents=["+ world/**"],
+            line_grid=False,
+        ),
+    ]
+    if include_rgb_tab:
+        tabs.append(
+            rrb.Spatial2DView(
+                name="Camera image",
+                origin="rerun_2d",
+                contents=["+ rerun_2d/**"],
+            )
+        )
+    if include_snr_tab:
+        tabs.append(
+            rrb.Spatial2DView(
+                name="SNR map",
+                origin="rerun_snr",
+                contents=["+ rerun_snr/**"],
+            )
+        )
+    rr.send_blueprint(rrb.Blueprint(rrb.Tabs(*tabs)))
+
+
+def _log_sequential(
+    entries,
+    dataset_dir: Path,
+    args,
+    *,
+    timeline: str = "step",
+    accumulate: bool = False,
+) -> None:
+    """Log frames on a timeline (camera + PCD per step).
+
+    * ``accumulate=False`` (기본): 공유 엔티티(``world/pcd/current``, ``world/cam``)에
+      기록 → 재생하면 프레임이 **한 개씩 교체**되며 지나갑니다.
+    * ``accumulate=True``: 프레임마다 **고유 엔티티**(``world/pcd/frame_N`` 등)에
+      기록 → 재생할수록 이전 프레임 위에 **순차적으로 쌓입니다** (reconstruction 누적).
+
+    재생 순서는 ``--order`` 로 결정 (``file`` 번호순 / ``nearest`` 공간 인접순).
+    타임라인 값은 파일 번호가 아니라 **재생 순서(step, 1-based)** 입니다.
+    """
+    import rerun as rr
+
+    depth_clip = not args.no_depth_clip
+    entries = _order_entries(entries, args.order)
+    log.info(
+        "Sequential order (%s): %s",
+        args.order, " -> ".join(str(int(e.ply_path.stem)) for e in entries),
+    )
+
+    # CloudCompare 느낌: 화면 픽셀 단위(UI points)로 일정한 작은 점.
+    # --point-size-mm 지정 시 물리 반지름(mm, 줌에 따라 커짐).
+    if args.point_size_mm is not None:
+        pcd_radii = [float(args.point_size_mm)]
+    else:
+        pcd_radii = rr.Radius.ui_points([float(args.point_size)])
+
+    if not accumulate:
+        # 교체 모드: 카메라 로컬 축은 고정(Transform3D 가 프레임마다 이동) → 한 번만 static.
+        rr.log(
+            "world/cam/axes",
+            rr.Arrows3D(
+                origins=[[0, 0, 0]] * 3,
+                vectors=(np.eye(3) * 80.0).tolist(),
+                colors=_AXIS_COLORS,
+                labels=["cam_X", "cam_Y", "cam_Z"],
+            ),
+            static=True,
+        )
+
+    rgb_ok = 0
+    snr_ok = 0
+    for i, entry in enumerate(entries):
+        num = int(entry.ply_path.stem)
+        step = i + 1  # 재생 순서 (파일 번호가 아님)
+        M = entry.global_pose
+        color = _FRAME_PALETTE[i % len(_FRAME_PALETTE)]
+
+        # 누적: 프레임별 고유 경로 / 교체: 공유 경로.
+        pcd_path = f"world/pcd/{entry.key}" if accumulate else "world/pcd/current"
+        cam_path = f"world/cam/{entry.key}" if accumulate else "world/cam"
+        # 2D "Camera image" 탭은 항상 공유 경로 → 재생 순서(step)대로 이미지가 갱신됨.
+        rgb_2d_path = "rerun_2d/current"
+
+        rr.set_time(timeline, sequence=step)
+
+        pts_mm, colors = _load_frame_points(
+            entry.ply_path,
+            entry.key,
+            depth_clip=depth_clip,
+            depth_min_m=args.depth_min_m,
+            depth_max_m=args.depth_max_m,
+            depth_axis=args.depth_axis,
+            max_points=args.max_points,
+            fallback_color=color,
+        )
+        pts_global_mm = _transform_points_mm(pts_mm, M)
+        rr.log(pcd_path, rr.Points3D(pts_global_mm, colors=colors, radii=pcd_radii))
+
+        t_list, quat_xyzw = _matrix_to_transform_args(M)
+        rr.log(
+            cam_path,
+            rr.Transform3D(
+                translation=t_list,
+                quaternion=rr.Quaternion(xyzw=quat_xyzw),
+            ),
+        )
+        if accumulate:
+            # 누적 모드는 카메라마다 고유 경로 → 축도 프레임별로 로깅.
+            rr.log(
+                f"{cam_path}/axes",
+                rr.Arrows3D(
+                    origins=[[0, 0, 0]] * 3,
+                    vectors=(np.eye(3) * 80.0).tolist(),
+                    colors=_AXIS_COLORS,
+                ),
+            )
+
+        log.info(
+            "Seq step %d = %s: %d pts, |t|=%.1f mm",
+            step, entry.key, len(pts_global_mm), float(np.linalg.norm(M[:3, 3])),
+        )
+
+        intrinsic_json = _resolve_intrinsics_json(dataset_dir, num, args.intrinsics_dir)
+
+        def _log_frustum_img(path: str, img: np.ndarray) -> None:
+            """3D view: Pinhole + Image (projected onto the camera image plane)."""
+            if intrinsic_json is not None and intrinsic_json.exists():
+                _log_rgb_pinhole_json(
+                    path, img, intrinsic_json,
+                    image_plane_mm=args.image_plane_mm_3d, static=False,
+                )
+            else:
+                _log_rgb_pinhole_hwc(
+                    path, img, image_plane_mm=args.image_plane_mm_3d, static=False,
+                )
+
+        # ---- RGB: 3D frustum image (with Pinhole) + plain 2D "Camera image" tab ----
+        if not args.no_rgb:
+            rgb_path = dataset_dir / f"{num}.png"
+            rgb_hwc = _load_rgb_hwc(rgb_path) if rgb_path.exists() else None
+            if rgb_hwc is None:
+                log.warning("RGB not found/readable, skip: %s", rgb_path)
+            else:
+                _log_frustum_img(f"{cam_path}/rgb", rgb_hwc)
+                rr.log(rgb_2d_path, rr.Image(rgb_hwc))  # 2D 탭: 이미지만 (Pinhole 금지)
+                rgb_ok += 1
+
+        # ---- SNR map: plain 2D "SNR map" tab (timeline-synced, shared path) ----
+        if not args.no_snr:
+            snr_path = dataset_dir / f"{num}{args.snr_suffix}.png"
+            snr_hwc = _load_rgb_hwc(snr_path) if snr_path.exists() else None
+            if snr_hwc is None:
+                log.warning("SNR not found/readable, skip: %s", snr_path)
+            else:
+                rr.log("rerun_snr/current", rr.Image(snr_hwc))  # 2D 탭: 이미지만
+                snr_ok += 1
+
+    _send_sequential_blueprint(include_rgb_tab=rgb_ok > 0, include_snr_tab=snr_ok > 0)
+    log.info(
+        "Sequential (%s): %d frames on timeline '%s' (RGB %d, SNR %d).",
+        "accumulate" if accumulate else "replace",
+        len(entries), timeline, rgb_ok, snr_ok,
+    )
 
 
 def _log_frame_scene(
@@ -361,7 +626,7 @@ def _log_frame_scene(
     """Log frame axes (Transform3D) + PCD already in global frame.
 
     ``multi_eye_view`` cam2 와 동일: 축은 ``Transform3D`` 로 두고,
-    점은 ``p_global = global_pose @ p_local`` 를 **직접** 계산해 ``world/scene/pcd/`` 에 올림.
+    점은 ``p_global = global_pose @ p_local`` → ``world/pcd/{frame_key}`` (scene 과 분리).
     """
     import rerun as rr
 
@@ -392,9 +657,8 @@ def _log_frame_scene(
     )
     log_origin_spheres([(f"{entity}/origin", np.zeros(3), origin_color, label)])
 
-    # 글로벌 좌표 점 — world/scene 직하위 (Transform3D 이중 적용 방지)
     rr.log(
-        f"world/scene/pcd/{frame_key}",
+        f"world/pcd/{frame_key}",
         rr.Points3D(pts_global_mm, colors=colors, radii=[1.2]),
         static=True,
     )
@@ -412,7 +676,7 @@ def _load_frame_points(
     max_points: int,
     fallback_color: tuple[int, int, int],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Load PLY → (points mm, colors uint8)."""
+    """Load PLY → subsample → optional depth clip (points mm, colors uint8)."""
     log.info("Loading PLY %s (%s)...", frame_key, ply_path.name)
     loaded = load_ply_points(ply_path)
     if loaded is None:
@@ -422,33 +686,27 @@ def _load_frame_points(
     n_raw = len(pts_raw)
     pts_mm = _ply_array_to_scene_mm(pts_raw)
     pts_mm, colors = _drop_invalid_points(pts_mm, colors)
-    log.info(
-        "  %s valid pts %d / %d, extent mm %s",
-        frame_key,
-        len(pts_mm),
-        n_raw,
-        np.round(np.ptp(pts_mm, axis=0), 1).tolist(),
-    )
+    n_valid = len(pts_mm)
 
-    if depth_clip:
+    if colors is None:
+        colors = np.tile(
+            np.array([list(fallback_color)], dtype=np.uint8),
+            (n_valid, 1),
+        )
+    pts_mm, colors = subsample(pts_mm, colors, max_points)
+
+    if depth_clip and len(pts_mm) > 0:
         pts_m = pts_mm / 1000.0
         pts_m, colors = clip_depth_range(
             pts_m, depth_min_m, depth_max_m,
             depth_axis=depth_axis, colors=colors,
         )
         pts_mm = pts_m * 1000.0
-        log.info(
-            "  %s depth clip [%.2f, %.2f] m: %d pts",
-            frame_key, depth_min_m, depth_max_m, len(pts_mm),
-        )
 
-    if colors is None:
-        colors = np.tile(
-            np.array([list(fallback_color)], dtype=np.uint8),
-            (len(pts_mm), 1),
-        )
-    pts_mm, colors = subsample(pts_mm, colors, max_points)
-    log.info("  %s: using %d pts for display", frame_key, len(pts_mm))
+    log.info(
+        "  %s: %d / %d raw → %d sampled pts",
+        frame_key, n_valid, n_raw, len(pts_mm),
+    )
     return pts_mm, colors
 
 
@@ -475,14 +733,79 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated frame keys to show (default: all *.ply in dataset-dir)",
     )
     p.add_argument(
+        "--sequential",
+        action="store_true",
+        help="Play frames one-at-a-time on a timeline (camera + PCD replaced each step) "
+             "instead of overlaying all frames statically.",
+    )
+    p.add_argument(
+        "--accumulate",
+        action="store_true",
+        help="With --sequential: keep each frame on its own entity so frames stack up "
+             "over the timeline (reconstruction builds up) instead of being replaced.",
+    )
+    p.add_argument(
+        "--order",
+        choices=["file", "nearest"],
+        default="file",
+        help="Sequential playback order: 'file' = numeric filename order (1,2,3,…), "
+             "'nearest' = greedy nearest-neighbor path by camera position so adjacent "
+             "steps are spatially close (default file).",
+    )
+    p.add_argument(
+        "--point-size",
+        type=float,
+        default=1.5,
+        metavar="PX",
+        help="Point size in screen pixels (UI points) for --sequential PCD — small = "
+             "CloudCompare-like crisp dots (default 1.5). See also --point-size-mm.",
+    )
+    p.add_argument(
+        "--point-size-mm",
+        type=float,
+        default=None,
+        metavar="MM",
+        help="Use a fixed physical point radius in mm instead of screen-pixel sizing "
+             "(overrides --point-size; points grow/shrink with zoom).",
+    )
+    p.add_argument(
         "--no-merged-pcd",
         action="store_true",
-        help="Do not log merged global point cloud at world/scene/merged",
+        help="Do not log merged global point cloud at world/pcd/merged",
+    )
+    p.add_argument(
+        "--scene-mesh",
+        type=Path,
+        default=None,
+        help="Scene mesh PLY (default: <dataset-dir>/scene_mesh.ply if exists)",
+    )
+    p.add_argument(
+        "--no-scene-mesh",
+        action="store_true",
+        help="Do not load scene_mesh.ply",
+    )
+    p.add_argument(
+        "--max-mesh-points",
+        type=int,
+        default=150_000,
+        metavar="N",
+        help="Max points for scene_mesh.ply vertex sampling (default 150000)",
     )
     p.add_argument(
         "--no-rgb",
         action="store_true",
         help="Do not load N.png / Pinhole / 2D camera tabs",
+    )
+    p.add_argument(
+        "--no-snr",
+        action="store_true",
+        help="Do not load N<snr-suffix>.png SNR maps (sequential mode only)",
+    )
+    p.add_argument(
+        "--snr-suffix",
+        type=str,
+        default="_snr_map",
+        help="Filename suffix for per-frame SNR map PNG (default '_snr_map' -> N_snr_map.png)",
     )
     p.add_argument(
         "--image-plane-mm-3d",
@@ -505,8 +828,8 @@ def parse_args() -> argparse.Namespace:
         help="Optional dir with N.json intrinsics; else estimate from image size",
     )
     add_common_args(p)
-    # 8 frames × large PLY; depth in meters (PLY Z ≈ 0–1100 mm → ~1.2 m max)
-    p.set_defaults(max_points=300_000, depth_max_m=1.2)
+    # 프레임 PLY: 샘플링 우선 (기본 8만/프레임)
+    p.set_defaults(max_points=80_000, depth_max_m=1.2)
     return p.parse_args()
 
 
@@ -538,10 +861,19 @@ def main() -> None:
         "reconstruction",
         spawn=spawn,
         port=args.port,
-        views=[("Reconstruction (global)", "world/scene")],
+        views=[("Reconstruction (global)", "world")],
     )
 
     import rerun as rr
+
+    if args.sequential or args.accumulate:
+        _log_sequential(entries, dataset_dir, args, accumulate=args.accumulate)
+        if not args.no_scene_mesh:
+            mesh_path = args.scene_mesh or (dataset_dir / "scene_mesh.ply")
+            _log_scene_mesh(mesh_path.resolve(), max_points=args.max_mesh_points)
+        log.info("Done (sequential): %d frames.", len(entries))
+        finalize_viewer(save_path, spawn=spawn, app_name="Sequential (global)")
+        return
 
     global_origin = np.zeros(3)
     ref_key: str | None = None
@@ -581,7 +913,7 @@ def main() -> None:
 
         t_global = M[:3, 3]
         log_debug_link(
-            f"world/scene/_debug/origin_to_{entry.key}",
+            f"world/_debug/to_{entry.key}",
             global_origin,
             t_global,
             color=(*color, 120),
@@ -591,7 +923,7 @@ def main() -> None:
         all_pts = np.vstack(merged_pts)
         all_cols = np.vstack(merged_cols)
         rr.log(
-            "world/scene/merged/pcd",
+            "world/pcd/merged",
             rr.Points3D(all_pts, colors=all_cols, radii=[1.0]),
             static=True,
         )
@@ -603,23 +935,33 @@ def main() -> None:
     if ref_key:
         log.info("Reference frame (identity global_pose): %s", ref_key)
 
-    rgb_tabs: list[tuple[str, str]] = []
+    if not args.no_scene_mesh:
+        mesh_path = args.scene_mesh or (dataset_dir / "scene_mesh.ply")
+        _log_scene_mesh(mesh_path.resolve(), max_points=args.max_mesh_points)
+
     if not args.no_rgb:
+        rgb_ok = 0
         for entry in entries:
             num = int(entry.ply_path.stem)
             rgb_path = dataset_dir / f"{num}.png"
             intrinsic_json = _resolve_intrinsics_json(
                 dataset_dir, num, args.intrinsics_dir,
             )
-            rgb_tabs += _log_frame_rgb(
+            if _log_frame_rgb(
                 entry.key,
+                num,
                 rgb_path,
                 entry.global_pose,
                 plane_3d=args.image_plane_mm_3d,
                 plane_2d=args.image_plane_mm_2d,
                 intrinsic_json=intrinsic_json,
-            )
-        _send_reconstruction_blueprint(rgb_tab_origins=rgb_tabs)
+            ):
+                rgb_ok += 1
+        _send_reconstruction_blueprint(include_rgb_tab=rgb_ok > 0)
+        log.info(
+            "RGB: %d / %d frames (2D tab: Camera images → pick rerun_2d/01 … in tree)",
+            rgb_ok, len(entries),
+        )
 
     log.info("Done: %d / %d frames visualized.", len(entries), len(entries))
     finalize_viewer(save_path, spawn=spawn, app_name="Reconstruction (global)")
